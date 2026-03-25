@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3-Like Storage Service</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #555;
+            font-size: 14px;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+        }
+
+        .file-list {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .file-item .name {
+            color: #333;
+            font-size: 14px;
+            flex: 1;
+        }
+
+        .file-item .size {
+            color: #999;
+            font-size: 12px;
+            margin-right: 15px;
+        }
+
+        .file-actions button {
+            padding: 6px 12px;
+            margin-left: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .btn-download {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-delete {
+            background: #f44336;
+            color: white;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .bucket-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .bucket-tag {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .bucket-tag:hover {
+            background: #bbdefb;
+        }
+
+        .bucket-tag.active {
+            background: #667eea;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📦 S3-Like Storage Service</h1>
+            <p>A simple file storage service with S3-compatible API</p>
+        </div>
+
+        <div class="grid">
+            <!-- Bucket Management Card -->
+            <div class="card">
+                <h2>🗂️ Bucket Management</h2>
+
+                <div class="form-group">
+                    <label for="bucketName">Bucket Name</label>
+                    <input type="text" id="bucketName" placeholder="Enter bucket name">
+                </div>
+
+                <div class="form-group">
+                    <button class="btn btn-primary" onclick="createBucket()">Create Bucket</button>
+                    <button class="btn btn-secondary" onclick="listBuckets()">List Buckets</button>
+                </div>
+
+                <div id="bucketList" class="bucket-list"></div>
+
+                <div class="form-group">
+                    <label for="selectedBucket">Select Bucket</label>
+                    <select id="selectedBucket">
+                        <option value="">-- Select a bucket --</option>
+                    </select>
+                </div>
+
+                <div id="bucketMessage"></div>
+            </div>
+
+            <!-- File Upload Card -->
+            <div class="card">
+                <h2>📤 Upload File</h2>
+
+                <div class="form-group">
+                    <label for="uploadBucket">Bucket</label>
+                    <select id="uploadBucket">
+                        <option value="">-- Select a bucket --</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="fileName">File Name</label>
+                    <input type="text" id="fileName" placeholder="Enter file name (optional)">
+                </div>
+
+                <div class="form-group">
+                    <label for="fileInput">Choose File</label>
+                    <input type="file" id="fileInput">
+                </div>
+
+                <button class="btn btn-primary" onclick="uploadFile()">Upload File</button>
+
+                <div id="uploadMessage"></div>
+            </div>
+
+            <!-- File List Card -->
+            <div class="card">
+                <h2>📂 Files in Bucket</h2>
+
+                <div class="form-group">
+                    <label for="listBucket">Bucket</label>
+                    <select id="listBucket">
+                        <option value="">-- Select a bucket --</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-secondary" onclick="listFiles()">List Files</button>
+
+                <div id="fileList" class="file-list"></div>
+
+                <div id="listMessage"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + "/api";
+
+        function showMessage(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="message ${type}">${message}</div>`;
+            setTimeout(() => {
+                element.innerHTML = '';
+            }, 5000);
+        }
+
+        async function createBucket() {
+            const bucketName = document.getElementById('bucketName').value.trim();
+            if (!bucketName) {
+                showMessage('bucketMessage', 'Please enter a bucket name', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/${bucketName}`, {
+                    method: 'PUT'
+                });
+                const result = await response.json();
+                showMessage('bucketMessage', result.message, 'success');
+                document.getElementById('bucketName').value = '';
+                listBuckets();
+            } catch (error) {
+                showMessage('bucketMessage', 'Failed to create bucket', 'error');
+            }
+        }
+
+        async function listBuckets() {
+            try {
+                const response = await fetch(`${API_BASE}/`);
+                const xmlText = await response.text();
+
+                // Parse XML to get bucket names
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                const bucketNames = xmlDoc.getElementsByTagName('Name');
+
+                const bucketSelect = document.getElementById('selectedBucket');
+                const uploadSelect = document.getElementById('uploadBucket');
+                const listSelect = document.getElementById('listBucket');
+                const bucketList = document.getElementById('bucketList');
+
+                bucketSelect.innerHTML = '<option value="">-- Select a bucket --</option>';
+                uploadSelect.innerHTML = '<option value="">-- Select a bucket --</option>';
+                listSelect.innerHTML = '<option value="">-- Select a bucket --</option>';
+                bucketList.innerHTML = '';
+
+                for (let i = 0; i < bucketNames.length; i++) {
+                    const name = bucketNames[i].textContent;
+                    const option = `<option value="${name}">${name}</option>`;
+                    bucketSelect.innerHTML += option;
+                    uploadSelect.innerHTML += option;
+                    listSelect.innerHTML += option;
+                    bucketList.innerHTML += `<span class="bucket-tag" onclick="selectBucket('${name}')">${name}</span>`;
+                }
+
+                showMessage('bucketMessage', `Found ${bucketNames.length} bucket(s)`, 'info');
+            } catch (error) {
+                showMessage('bucketMessage', 'Failed to list buckets', 'error');
+            }
+        }
+
+        function selectBucket(name) {
+            document.getElementById('selectedBucket').value = name;
+            document.getElementById('uploadBucket').value = name;
+            document.getElementById('listBucket').value = name;
+            listFiles();
+        }
+
+        async function uploadFile() {
+            const bucket = document.getElementById('uploadBucket').value;
+            const fileInput = document.getElementById('fileInput');
+            const fileNameInput = document.getElementById('fileName').value;
+
+            if (!bucket) {
+                showMessage('uploadMessage', 'Please select a bucket', 'error');
+                return;
+            }
+
+            if (!fileInput.files[0]) {
+                showMessage('uploadMessage', 'Please select a file', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const key = fileNameInput.trim() || file.name;
+
+            try {
+                const response = await fetch(`${API_BASE}/${bucket}/${key}`, {
+                    method: 'PUT',
+                    body: file
+                });
+                const result = await response.json();
+                showMessage('uploadMessage', result.message, 'success');
+                fileInput.value = '';
+                document.getElementById('fileName').value = '';
+                if (document.getElementById('listBucket').value === bucket) {
+                    listFiles();
+                }
+            } catch (error) {
+                showMessage('uploadMessage', 'Failed to upload file', 'error');
+            }
+        }
+
+        async function listFiles() {
+            const bucket = document.getElementById('listBucket').value;
+            if (!bucket) {
+                showMessage('listMessage', 'Please select a bucket', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/${bucket}`);
+                const xmlText = await response.text();
+
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                const keys = xmlDoc.getElementsByTagName('Key');
+                const sizes = xmlDoc.getElementsByTagName('Size');
+
+                const fileList = document.getElementById('fileList');
+                fileList.innerHTML = '';
+
+                if (keys.length === 0) {
+                    fileList.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">No files found</div>';
+                } else {
+                    for (let i = 0; i < keys.length; i++) {
+                        const key = keys[i].textContent;
+                        const size = parseInt(sizes[i].textContent);
+                        const sizeFormatted = formatSize(size);
+
+                        fileList.innerHTML += `
+                            <div class="file-item">
+                                <span class="name">${key}</span>
+                                <span class="size">${sizeFormatted}</span>
+                                <div class="file-actions">
+                                    <button class="btn-download" onclick="downloadFile('${bucket}', '${key}')">Download</button>
+                                    <button class="btn-delete" onclick="deleteFile('${bucket}', '${key}')">Delete</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+
+                showMessage('listMessage', `Found ${keys.length} file(s)`, 'info');
+            } catch (error) {
+                showMessage('listMessage', 'Failed to list files', 'error');
+            }
+        }
+
+        function downloadFile(bucket, key) {
+            window.open(`${API_BASE}/${bucket}/${key}`, '_blank');
+        }
+
+        async function deleteFile(bucket, key) {
+            if (!confirm(`Are you sure you want to delete "${key}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/${bucket}/${key}`, {
+                    method: 'DELETE'
+                });
+                const result = await response.json();
+                listFiles();
+            } catch (error) {
+                showMessage('listMessage', 'Failed to delete file', 'error');
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Initialize buckets on page load
+        listBuckets();
+    </script>
+</body>
+</html>

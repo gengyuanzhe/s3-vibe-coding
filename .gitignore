@@ -1,8 +1,20 @@
+# Mac system file
+.DS_Store
+
+# IDE
+.idea/
+
 # Compiled class file
 *.class
+target/
 
 # Log file
 *.log
+
+# Project specific
+jetty-home-*/
+jetty-base/
+storage/
 
 # BlueJ files
 *.ctxt

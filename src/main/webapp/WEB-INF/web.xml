@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+         https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+         version="6.0">
+
+    <display-name>S3-Like Storage Service</display-name>
+
+    <!-- Context Parameters -->
+    <context-param>
+        <param-name>storage.root.dir</param-name>
+        <param-value>./storage</param-value>
+    </context-param>
+
+    <context-param>
+        <param-name>storage.max.file.size</param-name>
+        <param-value>104857600</param-value>
+    </context-param>
+
+    <!-- Authentication Filter -->
+    <filter>
+        <filter-name>AuthenticationFilter</filter-name>
+        <filter-class>org.example.filter.AuthenticationFilter</filter-class>
+        <init-param>
+            <param-name>auth.enabled</param-name>
+            <param-value>false</param-value>
+        </init-param>
+        <init-param>
+            <param-name>auth.header</param-name>
+            <param-value>Authorization</param-value>
+        </init-param>
+        <init-param>
+            <param-name>auth.token</param-name>
+            <param-value>Bearer your-secret-token</param-value>
+        </init-param>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>AuthenticationFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <!-- S3-Like Servlet -->
+    <servlet>
+        <servlet-name>S3Servlet</servlet-name>
+        <servlet-class>org.example.servlet.S3Servlet</servlet-class>
+        <load-on-startup>1</load-on-startup>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>S3Servlet</servlet-name>
+        <url-pattern>/api/*</url-pattern>
+    </servlet-mapping>
+
+    <!-- Welcome File -->
+    <welcome-file-list>
+        <welcome-file>index.html</welcome-file>
+    </welcome-file-list>
+
+</web-app>
