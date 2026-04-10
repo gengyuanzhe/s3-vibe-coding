@@ -21,7 +21,10 @@ s3-vibe-coding/
 │   │   ├── Main.java                    # Jetty 服务器启动入口
 │   │   ├── servlet/S3Servlet.java         # S3 API 处理
 │   │   ├── filter/AuthenticationFilter.java  # 身份验证
-│   │   └── service/StorageService.java     # 存储服务
+│   │   ├── service/StorageService.java     # 存储服务
+│   │   └── monitor/                        # 健康监控
+│   │       ├── HealthMonitor.java          # 定时健康检查
+│   │       └── HealthMonitorListener.java  # Servlet 生命周期监听
 │   └── webapp/
 │       ├── WEB-INF/web.xml             # Servlet 配置
 │       └── index.html                  # Web 管理界面
@@ -123,6 +126,14 @@ Jetty 服务器启动类，配置：
 - `auth.token` - 验证令牌
 - OPTIONS 请求跳过验证（CORS 预检）
 
+### HealthMonitor.java / HealthMonitorListener.java
+健康监控服务，随 Web 应用启动自动运行：
+- 使用 `ScheduledExecutorService` 定期调用 `/api/health` 检测服务状态
+- 默认每 10 秒检查一次，初始延迟 5 秒
+- 使用 Java 11+ `HttpClient`，连接超时 5 秒
+- 守护线程，应用关闭时优雅停止
+- 支持通过 `server.port` 系统属性动态构建检测 URL
+
 ## 配置参数
 
 ### web.xml 上下文参数
@@ -139,6 +150,14 @@ Jetty 服务器启动类，配置：
 | `auth.enabled` | `false` | 是否启用身份验证 |
 | `auth.header` | `Authorization` | 请求头名称 |
 | `auth.token` | `Bearer your-secret-token` | 验证令牌 |
+
+### HealthMonitor 参数
+
+| 参数名 | 默认值 | 说明 |
+|--------|---------|------|
+| `health.monitor.enabled` | `true` | 是否启用健康监控 |
+| `health.monitor.interval.seconds` | `10` | 检查间隔（秒） |
+| `health.monitor.base.url` | `http://localhost:8080` | 检测基础 URL |
 
 ## 错误码映射
 
