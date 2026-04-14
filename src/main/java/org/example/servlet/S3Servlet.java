@@ -10,34 +10,21 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 /**
  * S3-like Servlet for handling file upload and download operations
- * Supports S3-style bucket and object operations
+ * Supports S3-style bucket and object operations with AWS SDK compatibility
  */
 public class S3Servlet extends HttpServlet {
 
     private static final Logger logger = LoggerFactory.getLogger(S3Servlet.class);
+    private static final String S3_XMLNS = "http://s3.amazonaws.com/doc/2006-03-01/";
 
     private StorageService storageService;
     private long maxFileSize;
-
-    @Override
-    public void init(ServletConfig config) throws ServletException {
-        super.init(config);
-
-        String storageRootDir = config.getServletContext().getInitParameter("storage.root.dir");
-        if (storageRootDir == null) {
-            storageRootDir = "./storage";
-        }
-
-        String maxSizeParam = config.getServletContext().getInitParameter("storage.max.file.size");
-        this.maxFileSize = maxSizeParam != null ? Long.parseLong(maxSizeParam) : 100 * 1024 * 1024; // 100MB default
-
-        this.storageService = new StorageService(storageRootDir, maxFileSize);
-
-        logger.info("S3Servlet initialized with storage directory: {}", storageRootDir);
-    }
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -59,21 +46,49 @@ public class S3Servlet extends HttpServlet {
         handlePostRequest(req, resp);
     }
 
+    private ServletConfig servletConfig;
+
     @Override
-    protected void doOptions(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        // Handle CORS preflight requests
-        setCorsHeaders(resp);
-        resp.setStatus(HttpServletResponse.SC_OK);
+    public void init(ServletConfig config) throws ServletException {
+        super.init(config);
+        this.servletConfig = config;
+
+        String storageRootDir = config.getServletContext().getInitParameter("storage.root.dir");
+        if (storageRootDir == null) {
+            storageRootDir = "./storage";
+        }
+
+        String maxSizeParam = config.getServletContext().getInitParameter("storage.max.file.size");
+        this.maxFileSize = maxSizeParam != null ? Long.parseLong(maxSizeParam) : 100 * 1024 * 1024; // 100MB default
+
+        this.storageService = new StorageService(storageRootDir, maxFileSize);
+
+        logger.info("S3Servlet initialized with storage directory: {}", storageRootDir);
     }
 
     /**
      * Handle GET requests - List buckets, List objects, or Download object
      */
-    private void handleGetRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+    private void handleGetRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
         String pathInfo = req.getPathInfo();
         String queryString = req.getQueryString();
 
         logger.info("GET request: path={}, query={}", pathInfo, queryString);
+
+        // Serve web UI static files
+        if ("/index.html".equals(pathInfo)
+                || (pathInfo != null && pathInfo.endsWith(".css"))
+                || (pathInfo != null && pathInfo.endsWith(".js"))) {
+            serveStaticFile(resp, pathInfo);
+            return;
+        }
+
+        // Serve web UI for root path with text/html accept
+        if ((pathInfo == null || pathInfo.equals("/"))
+                && req.getHeader("Accept") != null && req.getHeader("Accept").contains("text/html")) {
+            serveStaticFile(resp, "/index.html");
+            return;
+        }
 
         // Health check endpoint
         if ("/health".equals(pathInfo)) {
@@ -173,17 +188,17 @@ public class S3Servlet extends HttpServlet {
 
         StringBuilder xml = new StringBuilder();
         xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        xml.append("<ListAllMyBucketsResult>\n");
+        xml.append("<ListAllMyBucketsResult xmlns=\"").append(S3_XMLNS).append("\">\n");
         xml.append("  <Owner>\n");
         xml.append("    <ID>s3-storage</ID>\n");
         xml.append("    <DisplayName>S3 Storage Service</DisplayName>\n");
         xml.append("  </Owner>\n");
         xml.append("  <Buckets>\n");
 
-        for (String bucket : buckets) {
+        for (var bucket : buckets) {
             xml.append("    <Bucket>\n");
-            xml.append("      <Name>").append(escapeXml(bucket)).append("</Name>\n");
-            xml.append("      <CreationDate>2024-01-01T00:00:00.000Z</CreationDate>\n");
+            xml.append("      <Name>").append(escapeXml(bucket.getName())).append("</Name>\n");
+            xml.append("      <CreationDate>").append(bucket.getCreationDateFormatted()).append("</CreationDate>\n");
             xml.append("    </Bucket>\n");
         }
 
@@ -207,22 +222,24 @@ public class S3Servlet extends HttpServlet {
 
         StringBuilder xml = new StringBuilder();
         xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        xml.append("<ListBucketResult>\n");
+        xml.append("<ListBucketResult xmlns=\"").append(S3_XMLNS).append("\">\n");
         xml.append("  <Name>").append(escapeXml(bucketName)).append("</Name>\n");
         xml.append("  <Prefix>").append(prefix != null ? escapeXml(prefix) : "").append("</Prefix>\n");
         xml.append("  <MaxKeys>1000</MaxKeys>\n");
         xml.append("  <IsTruncated>false</IsTruncated>\n");
-        xml.append("  <Contents>\n");
 
         for (var object : objects) {
-            xml.append("    <Contents>\n");
-            xml.append("      <Key>").append(escapeXml(object.getKey())).append("</Key>\n");
-            xml.append("      <Size>").append(object.getSize()).append("</Size>\n");
-            xml.append("      <LastModified>").append(object.getLastModifiedFormatted()).append("</LastModified>\n");
-            xml.append("    </Contents>\n");
+            String etag = storageService.getObjectEtag(bucketName, object.getKey());
+            xml.append("  <Contents>\n");
+            xml.append("    <Key>").append(escapeXml(object.getKey())).append("</Key>\n");
+            xml.append("    <Size>").append(object.getSize()).append("</Size>\n");
+            xml.append("    <LastModified>").append(object.getLastModifiedFormatted()).append("</LastModified>\n");
+            if (etag != null) {
+                xml.append("    <ETag>\"").append(escapeXml(etag)).append("\"</ETag>\n");
+            }
+            xml.append("  </Contents>\n");
         }
 
-        xml.append("  </Contents>\n");
         xml.append("</ListBucketResult>");
 
         sendXmlResponse(resp, xml.toString());
@@ -248,7 +265,15 @@ public class S3Servlet extends HttpServlet {
 
         resp.setContentType(contentType);
         resp.setContentLengthLong(file.length());
-        resp.setHeader("Content-Disposition", "attachment; filename=\"" + objectKey + "\"");
+
+        // Add Last-Modified header (RFC 1123 format)
+        resp.setHeader("Last-Modified", formatRfc1123Date(file.lastModified()));
+
+        // Add ETag header
+        String etag = storageService.getObjectEtag(bucketName, objectKey);
+        if (etag != null) {
+            resp.setHeader("ETag", "\"" + etag + "\"");
+        }
 
         try (InputStream in = new FileInputStream(file);
              OutputStream out = resp.getOutputStream()) {
@@ -267,7 +292,8 @@ public class S3Servlet extends HttpServlet {
      */
     private void handleCreateBucket(HttpServletRequest req, HttpServletResponse resp, String bucketName) throws IOException {
         if (storageService.createBucket(bucketName)) {
-            sendSuccessResponse(resp, "Bucket created successfully");
+            resp.setStatus(HttpServletResponse.SC_OK);
+            resp.setHeader("Location", "/" + bucketName);
         } else {
             sendError(resp, "BucketAlreadyExists", "The requested bucket name is not available");
         }
@@ -288,12 +314,11 @@ public class S3Servlet extends HttpServlet {
             return;
         }
 
-        boolean success = storageService.putObject(bucketName, objectKey, req.getInputStream(), contentLength);
+        String etag = storageService.putObject(bucketName, objectKey, req.getInputStream(), contentLength);
 
-        if (success) {
-            String etag = java.util.UUID.randomUUID().toString();
+        if (etag != null) {
+            resp.setStatus(HttpServletResponse.SC_OK);
             resp.setHeader("ETag", "\"" + etag + "\"");
-            sendSuccessResponse(resp, "Object uploaded successfully");
         } else {
             sendError(resp, "InternalError", "Failed to upload object");
         }
@@ -304,7 +329,7 @@ public class S3Servlet extends HttpServlet {
      */
     private void handleDeleteBucket(HttpServletRequest req, HttpServletResponse resp, String bucketName) throws IOException {
         if (storageService.deleteBucket(bucketName)) {
-            sendSuccessResponse(resp, "Bucket deleted successfully");
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
         } else if (!storageService.bucketExists(bucketName)) {
             sendError(resp, "NoSuchBucket", "The specified bucket does not exist");
         } else {
@@ -322,7 +347,7 @@ public class S3Servlet extends HttpServlet {
         }
 
         if (storageService.deleteObject(bucketName, objectKey)) {
-            sendSuccessResponse(resp, "Object deleted successfully");
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
         } else {
             sendError(resp, "NoSuchKey", "The specified key does not exist");
         }
@@ -338,15 +363,6 @@ public class S3Servlet extends HttpServlet {
     }
 
     /**
-     * Send success response
-     */
-    private void sendSuccessResponse(HttpServletResponse resp, String message) throws IOException {
-        resp.setStatus(HttpServletResponse.SC_OK);
-        resp.setContentType("application/json");
-        resp.getWriter().write("{\"status\":\"success\",\"message\":\"" + escapeJson(message) + "\"}");
-    }
-
-    /**
      * Send error response in S3 XML format
      */
     private void sendError(HttpServletResponse resp, String code, String message) throws IOException {
@@ -354,13 +370,13 @@ public class S3Servlet extends HttpServlet {
         resp.setContentType("application/xml");
         String xml = String.format(
                 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                        "<Error>\n" +
+                        "<Error xmlns=\"%s\">\n" +
                         "  <Code>%s</Code>\n" +
                         "  <Message>%s</Message>\n" +
                         "  <Resource>%s</Resource>\n" +
                         "  <RequestId>%s</RequestId>\n" +
                         "</Error>",
-                code, escapeXml(message), escapeXml(code), java.util.UUID.randomUUID()
+                S3_XMLNS, code, escapeXml(message), escapeXml(code), java.util.UUID.randomUUID()
         );
         resp.getWriter().write(xml);
     }
@@ -370,8 +386,9 @@ public class S3Servlet extends HttpServlet {
      */
     private int getStatusCodeForError(String code) {
         return switch (code) {
-            case "AccessDenied", "InvalidToken" -> HttpServletResponse.SC_UNAUTHORIZED;
+            case "AccessDenied", "InvalidToken" -> HttpServletResponse.SC_FORBIDDEN;
             case "NoSuchBucket", "NoSuchKey" -> HttpServletResponse.SC_NOT_FOUND;
+            case "BucketAlreadyExists", "BucketNotEmpty" -> HttpServletResponse.SC_CONFLICT;
             case "EntityTooLarge" -> HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE;
             case "InvalidBucketName" -> HttpServletResponse.SC_BAD_REQUEST;
             default -> HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
@@ -379,12 +396,12 @@ public class S3Servlet extends HttpServlet {
     }
 
     /**
-     * Set CORS headers
+     * Format date in RFC 1123 format for Last-Modified header
      */
-    private void setCorsHeaders(HttpServletResponse resp) {
-        resp.setHeader("Access-Control-Allow-Origin", "*");
-        resp.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        resp.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, x-amz-*");
+    private String formatRfc1123Date(long millis) {
+        DateTimeFormatter formatter = DateTimeFormatter.RFC_1123_DATE_TIME
+                .withZone(ZoneId.of("GMT"));
+        return formatter.format(Instant.ofEpochMilli(millis));
     }
 
     /**
@@ -400,14 +417,21 @@ public class S3Servlet extends HttpServlet {
     }
 
     /**
-     * Escape JSON special characters
+     * Serve a static file from the webapp directory
      */
-    private String escapeJson(String text) {
-        if (text == null) return "";
-        return text.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+    private void serveStaticFile(HttpServletResponse resp, String path) throws IOException {
+        try (InputStream is = servletConfig.getServletContext().getResourceAsStream(path)) {
+            if (is != null) {
+                byte[] data = is.readAllBytes();
+                String contentType = "text/html";
+                if (path.endsWith(".css")) contentType = "text/css";
+                else if (path.endsWith(".js")) contentType = "application/javascript";
+                resp.setContentType(contentType);
+                resp.setContentLength(data.length);
+                resp.getOutputStream().write(data);
+            } else {
+                resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            }
+        }
     }
 }

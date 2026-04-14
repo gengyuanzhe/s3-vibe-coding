@@ -172,7 +172,7 @@ class S3ServletTest {
     // ==================== Create Bucket Tests ====================
 
     @Test
-    void doPut_createBucket_shouldReturnSuccess() throws Exception {
+    void doPut_createBucket_shouldReturn200() throws Exception {
         HttpServletRequest request = mockRequest("PUT", "/new-bucket", null);
         HttpServletResponse response = mockResponse();
 
@@ -194,7 +194,7 @@ class S3ServletTest {
 
         invokeDoPut(servlet, request, response);
 
-        verify(response).setStatus(anyInt()); // Will be error status
+        verify(response).setStatus(HttpServletResponse.SC_CONFLICT);
     }
 
     @Test
@@ -210,7 +210,7 @@ class S3ServletTest {
     // ==================== Upload Object Tests ====================
 
     @Test
-    void doPut_uploadObject_shouldReturnSuccess() throws Exception {
+    void doPut_uploadObject_shouldReturn200WithETag() throws Exception {
         // Create bucket first
         HttpServletRequest createBucketRequest = mockRequest("PUT", "/test-bucket", null);
         HttpServletResponse createBucketResponse = mockResponse();
@@ -241,7 +241,7 @@ class S3ServletTest {
     // ==================== Delete Bucket Tests ====================
 
     @Test
-    void doDelete_emptyBucket_shouldReturnSuccess() throws Exception {
+    void doDelete_emptyBucket_shouldReturn204() throws Exception {
         // Create bucket first
         HttpServletRequest createRequest = mockRequest("PUT", "/to-delete", null);
         HttpServletResponse createResponse = mockResponse();
@@ -253,7 +253,7 @@ class S3ServletTest {
 
         invokeDoDelete(servlet, request, response);
 
-        verify(response).setStatus(HttpServletResponse.SC_OK);
+        verify(response).setStatus(HttpServletResponse.SC_NO_CONTENT);
     }
 
     @Test
@@ -284,13 +284,13 @@ class S3ServletTest {
 
         invokeDoDelete(servlet, request, response);
 
-        verify(response).setStatus(anyInt()); // Should be conflict
+        verify(response).setStatus(HttpServletResponse.SC_CONFLICT);
     }
 
     // ==================== Delete Object Tests ====================
 
     @Test
-    void doDelete_existingObject_shouldReturnSuccess() throws Exception {
+    void doDelete_existingObject_shouldReturn204() throws Exception {
         // Create bucket and upload file
         HttpServletRequest createBucketRequest = mockRequest("PUT", "/test-bucket", null);
         HttpServletResponse createBucketResponse = mockResponse();
@@ -307,7 +307,7 @@ class S3ServletTest {
 
         invokeDoDelete(servlet, request, response);
 
-        verify(response).setStatus(HttpServletResponse.SC_OK);
+        verify(response).setStatus(HttpServletResponse.SC_NO_CONTENT);
     }
 
     @Test
@@ -333,20 +333,6 @@ class S3ServletTest {
         invokeDoDelete(servlet, request, response);
 
         verify(response).setStatus(HttpServletResponse.SC_NOT_FOUND);
-    }
-
-    // ==================== OPTIONS (CORS) Tests ====================
-
-    @Test
-    void doOptions_shouldSetCorsHeaders() throws Exception {
-        HttpServletRequest request = mockRequest("OPTIONS", "/test", null);
-        HttpServletResponse response = mockResponse();
-
-        invokeDoOptions(servlet, request, response);
-
-        verify(response).setHeader("Access-Control-Allow-Origin", "*");
-        verify(response).setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        verify(response).setStatus(HttpServletResponse.SC_OK);
     }
 
     // ==================== POST Tests ====================
@@ -381,12 +367,6 @@ class S3ServletTest {
         method.invoke(servlet, request, response);
     }
 
-    private void invokeDoOptions(S3Servlet servlet, HttpServletRequest request, HttpServletResponse response) throws Exception {
-        Method method = S3Servlet.class.getDeclaredMethod("doOptions", HttpServletRequest.class, HttpServletResponse.class);
-        method.setAccessible(true);
-        method.invoke(servlet, request, response);
-    }
-
     private void invokeDoPost(S3Servlet servlet, HttpServletRequest request, HttpServletResponse response) throws Exception {
         Method method = S3Servlet.class.getDeclaredMethod("doPost", HttpServletRequest.class, HttpServletResponse.class);
         method.setAccessible(true);
@@ -398,8 +378,8 @@ class S3ServletTest {
         when(request.getMethod()).thenReturn(method);
         when(request.getPathInfo()).thenReturn(pathInfo);
         when(request.getQueryString()).thenReturn(queryString);
-        when(request.getContextPath()).thenReturn("/api");
-        when(request.getRequestURI()).thenReturn("/api" + (pathInfo != null ? pathInfo : ""));
+        when(request.getContextPath()).thenReturn("");
+        when(request.getRequestURI()).thenReturn(pathInfo != null ? pathInfo : "/");
         return request;
     }
 

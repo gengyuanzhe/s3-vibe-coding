@@ -39,26 +39,34 @@
         <listener-class>org.example.monitor.HealthMonitorListener</listener-class>
     </listener>
 
-    <!-- Authentication Filter -->
+    <!-- AWS V4 Authentication Filter -->
     <filter>
-        <filter-name>AuthenticationFilter</filter-name>
-        <filter-class>org.example.filter.AuthenticationFilter</filter-class>
+        <filter-name>AwsV4AuthenticationFilter</filter-name>
+        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>
         <init-param>
             <param-name>auth.enabled</param-name>
-            <param-value>false</param-value>
+            <param-value>true</param-value>
         </init-param>
         <init-param>
-            <param-name>auth.header</param-name>
-            <param-value>Authorization</param-value>
+            <param-name>auth.mode</param-name>
+            <param-value>aws-v4</param-value>
         </init-param>
         <init-param>
-            <param-name>auth.token</param-name>
-            <param-value>Bearer your-secret-token</param-value>
+            <param-name>auth.region</param-name>
+            <param-value>us-east-1</param-value>
+        </init-param>
+        <init-param>
+            <param-name>auth.service</param-name>
+            <param-value>s3</param-value>
+        </init-param>
+        <init-param>
+            <param-name>auth.time.skew.minutes</param-name>
+            <param-value>15</param-value>
         </init-param>
     </filter>
 
     <filter-mapping>
-        <filter-name>AuthenticationFilter</filter-name>
+        <filter-name>AwsV4AuthenticationFilter</filter-name>
         <url-pattern>/*</url-pattern>
     </filter-mapping>
 
@@ -71,7 +79,7 @@
 
     <servlet-mapping>
         <servlet-name>S3Servlet</servlet-name>
-        <url-pattern>/api/*</url-pattern>
+        <url-pattern>/*</url-pattern>
     </servlet-mapping>
 
     <!-- Welcome File -->

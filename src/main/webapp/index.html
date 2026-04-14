@@ -312,7 +312,7 @@
     </div>
 
     <script>
-        const API_BASE = window.location.origin + "/api";
+        const API_BASE = window.location.origin;
 
         function showMessage(elementId, message, type = 'info') {
             const element = document.getElementById(elementId);
@@ -333,10 +333,13 @@
                 const response = await fetch(`${API_BASE}/${bucketName}`, {
                     method: 'PUT'
                 });
-                const result = await response.json();
-                showMessage('bucketMessage', result.message, 'success');
-                document.getElementById('bucketName').value = '';
-                listBuckets();
+                if (response.ok) {
+                    showMessage('bucketMessage', 'Bucket created successfully', 'success');
+                    document.getElementById('bucketName').value = '';
+                    listBuckets();
+                } else {
+                    showMessage('bucketMessage', 'Failed to create bucket', 'error');
+                }
             } catch (error) {
                 showMessage('bucketMessage', 'Failed to create bucket', 'error');
             }
@@ -407,12 +410,15 @@
                     method: 'PUT',
                     body: file
                 });
-                const result = await response.json();
-                showMessage('uploadMessage', result.message, 'success');
-                fileInput.value = '';
-                document.getElementById('fileName').value = '';
-                if (document.getElementById('listBucket').value === bucket) {
-                    listFiles();
+                if (response.ok) {
+                    showMessage('uploadMessage', 'File uploaded successfully', 'success');
+                    fileInput.value = '';
+                    document.getElementById('fileName').value = '';
+                    if (document.getElementById('listBucket').value === bucket) {
+                        listFiles();
+                    }
+                } else {
+                    showMessage('uploadMessage', 'Failed to upload file', 'error');
                 }
             } catch (error) {
                 showMessage('uploadMessage', 'Failed to upload file', 'error');
@@ -478,8 +484,11 @@
                 const response = await fetch(`${API_BASE}/${bucket}/${key}`, {
                     method: 'DELETE'
                 });
-                const result = await response.json();
-                listFiles();
+                if (response.ok || response.status === 204) {
+                    listFiles();
+                } else {
+                    showMessage('listMessage', 'Failed to delete file', 'error');
+                }
             } catch (error) {
                 showMessage('listMessage', 'Failed to delete file', 'error');
             }

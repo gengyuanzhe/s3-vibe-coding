@@ -1,12 +1,10 @@
 package org.example.integration;
 
 import org.apache.hc.client5.http.classic.methods.*;
-import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.ContentType;
-import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.eclipse.jetty.ee10.webapp.WebAppContext;
@@ -16,7 +14,6 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -74,6 +71,22 @@ class S3StorageIntegrationTest {
                 "        <param-name>storage.max.file.size</param-name>\n" +
                 "        <param-value>104857600</param-value>\n" +
                 "    </context-param>\n" +
+                "    <context-param>\n" +
+                "        <param-name>health.monitor.enabled</param-name>\n" +
+                "        <param-value>false</param-value>\n" +
+                "    </context-param>\n" +
+                "    <filter>\n" +
+                "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n" +
+                "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n" +
+                "        <init-param>\n" +
+                "            <param-name>auth.enabled</param-name>\n" +
+                "            <param-value>false</param-value>\n" +
+                "        </init-param>\n" +
+                "    </filter>\n" +
+                "    <filter-mapping>\n" +
+                "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n" +
+                "        <url-pattern>/*</url-pattern>\n" +
+                "    </filter-mapping>\n" +
                 "</web-app>";
 
         Path overrideWebXmlPath = tempDir.resolve("override-web.xml");
@@ -85,7 +98,7 @@ class S3StorageIntegrationTest {
 
         port = connector.getLocalPort();
         baseUrl = "http://localhost:" + port;
-        apiUrl = baseUrl + "/api";
+        apiUrl = baseUrl;
 
         System.out.println("========================================");
         System.out.println("Integration Test Server Started");
@@ -143,7 +156,7 @@ class S3StorageIntegrationTest {
             assertThat(response.getHeader("Content-Type").getValue()).contains("application/xml");
 
             String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("<ListAllMyBucketsResult>");
+            assertThat(body).contains("<ListAllMyBucketsResult");
             assertThat(body).contains("<Buckets>");
         }
     }
@@ -155,21 +168,17 @@ class S3StorageIntegrationTest {
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
             assertThat(response.getCode()).isEqualTo(200);
-
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("\"status\":\"success\"");
-            assertThat(body).contains("Bucket created successfully");
+            EntityUtils.consume(response.getEntity());
         }
     }
 
     @Test
     @Order(12)
-    void createBucket_whenExists_shouldFail() throws Exception {
+    void createBucket_whenExists_shouldReturn409() throws Exception {
         HttpPut request = new HttpPut(apiUrl + "/test-bucket");
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
-            // Second creation should fail
-            assertThat(response.getCode()).isNotEqualTo(200);
+            assertThat(response.getCode()).isEqualTo(409);
         }
     }
 
@@ -217,7 +226,7 @@ class S3StorageIntegrationTest {
             assertThat(response.getCode()).isEqualTo(200);
 
             String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("<ListBucketResult>");
+            assertThat(body).contains("<ListBucketResult");
             assertThat(body).contains("<Name>test-bucket</Name>");
         }
     }
@@ -230,11 +239,8 @@ class S3StorageIntegrationTest {
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
             assertThat(response.getCode()).isEqualTo(200);
-
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("\"status\":\"success\"");
-            assertThat(body).contains("Object uploaded successfully");
             assertThat(response.getHeader("ETag")).isNotNull();
+            EntityUtils.consume(response.getEntity());
         }
     }
 
@@ -248,10 +254,8 @@ class S3StorageIntegrationTest {
 
             String body = EntityUtils.toString(response.getEntity());
             assertThat(body).isEqualTo("Hello, World!");
-            assertThat(response.getHeader("Content-Disposition").getValue())
-                    .contains("attachment");
-            assertThat(response.getHeader("Content-Disposition").getValue())
-                    .contains("hello.txt");
+            assertThat(response.getHeader("Last-Modified")).isNotNull();
+            assertThat(response.getHeader("ETag")).isNotNull();
         }
     }
 
@@ -266,6 +270,7 @@ class S3StorageIntegrationTest {
             String body = EntityUtils.toString(response.getEntity());
             assertThat(body).contains("<Key>hello.txt</Key>");
             assertThat(body).contains("<Size>13</Size>");
+            assertThat(body).contains("<ETag>");
         }
     }
 
@@ -321,7 +326,7 @@ class S3StorageIntegrationTest {
             assertThat(response.getCode()).isEqualTo(404);
 
             String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("<Error>");
+            assertThat(body).contains("<Error");
             assertThat(body).contains("<Code>NoSuchKey</Code>");
         }
     }
@@ -336,7 +341,7 @@ class S3StorageIntegrationTest {
             assertThat(response.getCode()).isEqualTo(404);
 
             String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("<Error>");
+            assertThat(body).contains("<Error");
             assertThat(body).contains("<Code>NoSuchBucket</Code>");
         }
     }
@@ -351,10 +356,7 @@ class S3StorageIntegrationTest {
         HttpDelete request = new HttpDelete(apiUrl + "/test-bucket/to-delete.txt");
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
-
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("\"status\":\"success\"");
+            assertThat(response.getCode()).isEqualTo(204);
         }
 
         // Verify deleted
@@ -378,7 +380,7 @@ class S3StorageIntegrationTest {
 
     @Test
     @Order(30)
-    void deleteBucket_nonEmpty_shouldFail() throws Exception {
+    void deleteBucket_nonEmpty_shouldReturn409() throws Exception {
         // Create a bucket with files for this test
         HttpPut createRequest = new HttpPut(apiUrl + "/non-empty-bucket");
         try (CloseableHttpResponse response = httpClient.execute(createRequest)) {
@@ -392,11 +394,7 @@ class S3StorageIntegrationTest {
         HttpDelete request = new HttpDelete(apiUrl + "/non-empty-bucket");
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
-            // Should fail because bucket is not empty
-            assertThat(response.getCode()).isNotEqualTo(200);
-
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("<Error>");
+            assertThat(response.getCode()).isEqualTo(409);
         }
     }
 
@@ -420,7 +418,7 @@ class S3StorageIntegrationTest {
         HttpDelete request = new HttpDelete(apiUrl + "/to-delete-bucket");
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
+            assertThat(response.getCode()).isEqualTo(204);
         }
 
         // Verify bucket is gone
@@ -441,21 +439,6 @@ class S3StorageIntegrationTest {
         }
     }
 
-    // ==================== CORS Tests ====================
-
-    @Test
-    @Order(40)
-    void optionsRequest_shouldReturnCorsHeaders() throws Exception {
-        HttpOptions request = new HttpOptions(apiUrl + "/test-bucket");
-
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
-            assertThat(response.getHeader("Access-Control-Allow-Origin").getValue()).isEqualTo("*");
-            assertThat(response.getHeader("Access-Control-Allow-Methods").getValue())
-                    .contains("GET", "POST", "PUT", "DELETE", "OPTIONS");
-        }
-    }
-
     // ==================== Error Handling Tests ====================
 
     @Test
@@ -467,7 +450,7 @@ class S3StorageIntegrationTest {
             assertThat(response.getCode()).isEqualTo(404);
 
             String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("<Error>");
+            assertThat(body).contains("<Error");
             assertThat(body).contains("<Code>NoSuchBucket</Code>");
         }
     }
@@ -487,11 +470,10 @@ class S3StorageIntegrationTest {
     @Test
     @Order(60)
     void webUI_shouldBeAccessible() throws Exception {
-        HttpGet request = new HttpGet(baseUrl + "/");
+        HttpGet request = new HttpGet(baseUrl + "/index.html");
 
         try (CloseableHttpResponse response = httpClient.execute(request)) {
             assertThat(response.getCode()).isEqualTo(200);
-            assertThat(response.getHeader("Content-Type").getValue()).contains("text/html");
 
             String body = EntityUtils.toString(response.getEntity());
             assertThat(body).contains("<!DOCTYPE html>");
@@ -516,7 +498,6 @@ class S3StorageIntegrationTest {
             String body = EntityUtils.toString(response.getEntity());
 
             // Extract keys and delete each
-            // Simple regex extraction (not production quality, but works for tests)
             java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("<Key>([^<]+)</Key>");
             java.util.regex.Matcher matcher = pattern.matcher(body);
 

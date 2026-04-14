@@ -26,7 +26,7 @@ public class HealthMonitor {
     private ScheduledExecutorService scheduler;
 
     public HealthMonitor(String baseUrl, long intervalSeconds) {
-        this.healthUrl = baseUrl + "/api/health";
+        this.healthUrl = baseUrl + "/health";
         this.intervalSeconds = intervalSeconds;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))

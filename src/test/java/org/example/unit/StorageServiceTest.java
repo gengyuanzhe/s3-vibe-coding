@@ -81,9 +81,10 @@ class StorageServiceTest {
         storageService.createBucket("bucket2");
 
         // When & Then
-        assertThat(storageService.listBuckets())
-                .hasSize(2)
-                .contains("bucket1", "bucket2");
+        var buckets = storageService.listBuckets();
+        assertThat(buckets).hasSize(2);
+        assertThat(buckets.stream().map(StorageService.BucketInfo::getName))
+                .containsExactlyInAnyOrder("bucket1", "bucket2");
     }
 
     @Test
@@ -126,10 +127,10 @@ class StorageServiceTest {
         ByteArrayInputStream inputStream = new ByteArrayInputStream(content.getBytes());
 
         // When
-        boolean uploaded = storageService.putObject("test-bucket", "test.txt", inputStream, content.length());
+        String etag = storageService.putObject("test-bucket", "test.txt", inputStream, content.length());
 
         // Then
-        assertThat(uploaded).isTrue();
+        assertThat(etag).isNotNull();
         File uploadedFile = tempDir.resolve("test-bucket/test.txt").toFile();
         assertThat(uploadedFile).exists();
         assertThat(uploadedFile).hasContent(content);
@@ -143,21 +144,21 @@ class StorageServiceTest {
         ByteArrayInputStream inputStream = new ByteArrayInputStream(content.getBytes());
 
         // When
-        boolean uploaded = storageService.putObject("test-bucket", "folder/subfolder/file.txt", inputStream, content.length());
+        String etag = storageService.putObject("test-bucket", "folder/subfolder/file.txt", inputStream, content.length());
 
         // Then
-        assertThat(uploaded).isTrue();
+        assertThat(etag).isNotNull();
         assertThat(tempDir.resolve("test-bucket/folder/subfolder/file.txt").toFile()).exists();
     }
 
     @Test
-    void putObject_shouldReturnFalseWhenBucketNotExists() throws Exception {
+    void putObject_shouldReturnNullWhenBucketNotExists() throws Exception {
         // Given
         String content = "test";
         ByteArrayInputStream inputStream = new ByteArrayInputStream(content.getBytes());
 
         // When & Then
-        assertThat(storageService.putObject("non-existent", "file.txt", inputStream, content.length())).isFalse();
+        assertThat(storageService.putObject("non-existent", "file.txt", inputStream, content.length())).isNull();
     }
 
     @Test
@@ -303,10 +304,10 @@ class StorageServiceTest {
         ByteArrayInputStream inputStream = new ByteArrayInputStream(content.getBytes());
 
         // When - try to upload with path traversal
-        boolean uploaded = storageService.putObject("test-bucket", "../escape.txt", inputStream, content.length());
+        String etag = storageService.putObject("test-bucket", "../escape.txt", inputStream, content.length());
 
         // Then - should be stored without .. in the path
-        assertThat(uploaded).isTrue();
+        assertThat(etag).isNotNull();
         assertThat(tempDir.resolve("test-bucket/escape.txt").toFile()).exists();
     }
 }

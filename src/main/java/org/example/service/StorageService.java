@@ -11,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -57,6 +59,29 @@ public class StorageService {
     }
 
     /**
+     * Clean up empty parent directories after deleting an object.
+     * Walks up from the deleted file's parent, stopping at the bucket directory.
+     */
+    private void cleanupEmptyParentDirs(Path filePath, String bucketName) {
+        Path bucketPath = Paths.get(storageRootDir, sanitizePathComponent(bucketName));
+        Path parent = filePath.getParent();
+        while (parent != null && !parent.equals(bucketPath)) {
+            File dir = parent.toFile();
+            if (dir.isDirectory()) {
+                String[] contents = dir.list();
+                if (contents == null || contents.length == 0) {
+                    dir.delete();
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+            parent = parent.getParent();
+        }
+    }
+
+    /**
      * Sanitize bucket name to prevent path traversal
      */
     private String sanitizePathComponent(String component) {
@@ -97,13 +122,22 @@ public class StorageService {
             return false;
         }
 
-        return bucketDir.mkdirs();
+        if (bucketDir.mkdirs()) {
+            try {
+                Path createdFile = Paths.get(storageRootDir, sanitized, ".bucket-created");
+                Files.writeString(createdFile, String.valueOf(System.currentTimeMillis()));
+            } catch (IOException e) {
+                logger.warn("Failed to write bucket creation time", e);
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
      * List all buckets
      */
-    public List<String> listBuckets() {
+    public List<BucketInfo> listBuckets() {
         File rootDir = new File(storageRootDir);
         File[] buckets = rootDir.listFiles(File::isDirectory);
 
@@ -111,11 +145,28 @@ public class StorageService {
             return Collections.emptyList();
         }
 
-        List<String> bucketNames = new ArrayList<>();
+        List<BucketInfo> bucketInfos = new ArrayList<>();
         for (File bucket : buckets) {
-            bucketNames.add(bucket.getName());
+            long creationTime = getBucketCreationTime(bucket.getName());
+            bucketInfos.add(new BucketInfo(bucket.getName(), creationTime));
         }
-        return bucketNames;
+        return bucketInfos;
+    }
+
+    /**
+     * Get bucket creation timestamp
+     */
+    public long getBucketCreationTime(String bucketName) {
+        String sanitized = sanitizePathComponent(bucketName);
+        Path createdFile = Paths.get(storageRootDir, sanitized, ".bucket-created");
+        if (Files.exists(createdFile)) {
+            try {
+                return Long.parseLong(Files.readString(createdFile).trim());
+            } catch (Exception ignored) {
+            }
+        }
+        File bucketDir = Paths.get(storageRootDir, sanitized).toFile();
+        return bucketDir.exists() ? bucketDir.lastModified() : System.currentTimeMillis();
     }
 
     /**
@@ -128,26 +179,38 @@ public class StorageService {
             return false;
         }
 
+        // Check for user files (ignore hidden/sidecar files starting with .)
         String[] files = bucketDir.list();
-        if (files != null && files.length > 0) {
-            return false;
+        if (files != null) {
+            long userFiles = Arrays.stream(files)
+                    .filter(f -> !f.startsWith("."))
+                    .count();
+            if (userFiles > 0) {
+                return false;
+            }
         }
 
+        // Delete all hidden/sidecar files first, then the directory
+        if (files != null) {
+            for (String file : files) {
+                new File(bucketDir, file).delete();
+            }
+        }
         return bucketDir.delete();
     }
 
     /**
-     * Upload an object to a bucket
+     * Upload an object to a bucket. Returns MD5 ETag on success, null on failure.
      */
-    public boolean putObject(String bucketName, String objectKey, InputStream inputStream, long contentLength) {
+    public String putObject(String bucketName, String objectKey, InputStream inputStream, long contentLength) {
         if (contentLength > maxFileSize) {
             logger.warn("File size {} exceeds maximum allowed size {}", contentLength, maxFileSize);
-            return false;
+            return null;
         }
 
         if (!bucketExists(bucketName)) {
             logger.warn("Bucket does not exist: {}", bucketName);
-            return false;
+            return null;
         }
 
         Path filePath = getFilePath(bucketName, objectKey);
@@ -156,17 +219,24 @@ public class StorageService {
         if (!parentDir.exists()) {
             if (!parentDir.mkdirs()) {
                 logger.error("Failed to create directory: {}", parentDir);
-                return false;
+                return null;
             }
         }
 
         try {
-            Files.copy(inputStream, filePath, StandardCopyOption.REPLACE_EXISTING);
-            logger.info("Uploaded object: {}/{} (size: {} bytes)", bucketName, objectKey, contentLength);
-            return true;
+            byte[] data = inputStream.readAllBytes();
+            Files.write(filePath, data);
+
+            String etag = computeMd5Hex(data);
+
+            Path etagFile = Paths.get(filePath.toString() + ".etag");
+            Files.writeString(etagFile, etag);
+
+            logger.info("Uploaded object: {}/{} (size: {} bytes, etag: {})", bucketName, objectKey, data.length, etag);
+            return etag;
         } catch (IOException e) {
             logger.error("Failed to upload object: {}/{}", bucketName, objectKey, e);
-            return false;
+            return null;
         }
     }
 
@@ -201,6 +271,8 @@ public class StorageService {
 
         try (Stream<Path> paths = Files.walk(bucketDir.toPath())) {
             paths.filter(Files::isRegularFile)
+                    .filter(path -> !path.getFileName().toString().startsWith("."))
+                    .filter(path -> !path.getFileName().toString().endsWith(".etag"))
                     .forEach(path -> {
                         try {
                             String relativePath = bucketDir.toPath().relativize(path).toString();
@@ -234,7 +306,13 @@ public class StorageService {
         File file = filePath.toFile();
 
         if (file.exists() && file.isFile()) {
+            // Delete ETag sidecar file
+            Path etagFile = Paths.get(filePath.toString() + ".etag");
+            try { Files.deleteIfExists(etagFile); } catch (IOException ignored) {}
+
             if (file.delete()) {
+                // Clean up empty parent directories up to bucket root
+                cleanupEmptyParentDirs(filePath, bucketName);
                 logger.info("Deleted object: {}/{}", bucketName, objectKey);
                 return true;
             }
@@ -275,6 +353,48 @@ public class StorageService {
             case "zip" -> "application/zip";
             default -> "application/octet-stream";
         };
+    }
+
+    /**
+     * Compute MD5 hex string for data
+     */
+    private String computeMd5Hex(byte[] data) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            byte[] digest = md.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("MD5 not available", e);
+        }
+    }
+
+    /**
+     * Get ETag for an object
+     */
+    public String getObjectEtag(String bucketName, String objectKey) {
+        Path filePath = getFilePath(bucketName, objectKey);
+        Path etagFile = Paths.get(filePath.toString() + ".etag");
+        if (Files.exists(etagFile)) {
+            try {
+                return Files.readString(etagFile).trim();
+            } catch (IOException e) {
+                logger.warn("Failed to read ETag for {}/{}", bucketName, objectKey, e);
+            }
+        }
+        // Compute on-the-fly as fallback
+        File file = filePath.toFile();
+        if (file.exists()) {
+            try {
+                return computeMd5Hex(Files.readAllBytes(file.toPath()));
+            } catch (IOException e) {
+                logger.warn("Failed to compute ETag for {}/{}", bucketName, objectKey, e);
+            }
+        }
+        return null;
     }
 
     /**
@@ -322,6 +442,33 @@ public class StorageService {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
                     .withZone(ZoneId.of("UTC"));
             return formatter.format(Instant.ofEpochMilli(lastModified));
+        }
+    }
+
+    /**
+     * Bucket information class
+     */
+    public static class BucketInfo {
+        private final String name;
+        private final long creationDateMillis;
+
+        public BucketInfo(String name, long creationDateMillis) {
+            this.name = name;
+            this.creationDateMillis = creationDateMillis;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public long getCreationDateMillis() {
+            return creationDateMillis;
+        }
+
+        public String getCreationDateFormatted() {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+                    .withZone(ZoneId.of("UTC"));
+            return formatter.format(Instant.ofEpochMilli(creationDateMillis));
         }
     }
 }
