@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.example.auth.AwsCredentials;
 import org.example.auth.AwsCredentialsProvider;
+import org.example.auth.AuthState;
 import org.example.auth.AwsV4Signer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,16 +20,14 @@ public class AwsV4AuthenticationFilter implements Filter {
 
     private static final Logger logger = LoggerFactory.getLogger(AwsV4AuthenticationFilter.class);
 
-    private boolean authEnabled;
-    private String authMode;
     private AwsV4Signer signer;
     private AwsCredentialsProvider credentialsProvider;
 
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
-        this.authEnabled = Boolean.parseBoolean(filterConfig.getInitParameter("auth.enabled"));
-        this.authMode = filterConfig.getInitParameter("auth.mode");
-        if (this.authMode == null) this.authMode = "aws-v4";
+        // Read auth.mode from init-param and initialize AuthState
+        String authMode = filterConfig.getInitParameter("auth.mode");
+        AuthState.getInstance().init(authMode);
 
         String region = filterConfig.getInitParameter("auth.region");
         if (region == null) region = "us-east-1";
@@ -77,7 +76,7 @@ public class AwsV4AuthenticationFilter implements Filter {
             }
         }
 
-        logger.info("AwsV4AuthenticationFilter initialized - enabled: {}, mode: {}", authEnabled, authMode);
+        logger.info("AwsV4AuthenticationFilter initialized - mode: {}", AuthState.getInstance().getAuthMode());
     }
 
     private String resolvePath(String path) {
@@ -97,17 +96,15 @@ public class AwsV4AuthenticationFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-        if (!authEnabled) {
+        String requestUri = httpRequest.getRequestURI();
+
+        // Health check and admin endpoints always bypassed
+        if ("/health".equals(requestUri) || requestUri.startsWith("/admin/")) {
             chain.doFilter(request, response);
             return;
         }
 
-        // Health check endpoint always bypassed
-        String requestUri = httpRequest.getRequestURI();
-        if ("/health".equals(requestUri)) {
-            chain.doFilter(request, response);
-            return;
-        }
+        String authMode = AuthState.getInstance().getAuthMode();
 
         if ("none".equals(authMode)) {
             chain.doFilter(request, response);
