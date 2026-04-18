@@ -224,6 +224,23 @@
             color: white;
         }
 
+        .auth-warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .auth-warning strong {
+            margin-right: 8px;
+        }
+
         @media (max-width: 768px) {
             .grid {
                 grid-template-columns: 1fr;
@@ -236,6 +253,10 @@
         <div class="header">
             <h1>📦 S3-Like Storage Service</h1>
             <p>A simple file storage service with S3-compatible API</p>
+        </div>
+
+        <div id="authWarning" class="auth-warning" style="display:none;">
+            <span><strong>Warning:</strong> Current auth mode is <code>aws-v4</code>. Web UI operations are unavailable because browsers cannot send AWS V4 signatures. Switch to <code>both</code> or <code>none</code> in Auth Settings below.</span>
         </div>
 
         <div class="grid">
@@ -332,6 +353,19 @@
     <script>
         const API_BASE = window.location.origin;
 
+        function updateAuthWarning(mode) {
+            const warning = document.getElementById('authWarning');
+            warning.style.display = (mode === 'aws-v4') ? 'flex' : 'none';
+        }
+
+        function handleAuthError(response, elementId) {
+            if (response.status === 403) {
+                showMessage(elementId, 'Access denied. Current auth mode requires AWS V4 signature. Please switch to "both" or "none" in Auth Settings.', 'error');
+                return true;
+            }
+            return false;
+        }
+
         function showMessage(elementId, message, type = 'info') {
             const element = document.getElementById(elementId);
             element.innerHTML = `<div class="message ${type}">${message}</div>`;
@@ -355,7 +389,7 @@
                     showMessage('bucketMessage', 'Bucket created successfully', 'success');
                     document.getElementById('bucketName').value = '';
                     listBuckets();
-                } else {
+                } else if (!handleAuthError(response, 'bucketMessage')) {
                     showMessage('bucketMessage', 'Failed to create bucket', 'error');
                 }
             } catch (error) {
@@ -366,6 +400,7 @@
         async function listBuckets() {
             try {
                 const response = await fetch(`${API_BASE}/`);
+                if (handleAuthError(response, 'bucketMessage')) return;
                 const xmlText = await response.text();
 
                 // Parse XML to get bucket names
@@ -435,7 +470,7 @@
                     if (document.getElementById('listBucket').value === bucket) {
                         listFiles();
                     }
-                } else {
+                } else if (!handleAuthError(response, 'uploadMessage')) {
                     showMessage('uploadMessage', 'Failed to upload file', 'error');
                 }
             } catch (error) {
@@ -452,6 +487,7 @@
 
             try {
                 const response = await fetch(`${API_BASE}/${bucket}`);
+                if (handleAuthError(response, 'listMessage')) return;
                 const xmlText = await response.text();
 
                 const parser = new DOMParser();
@@ -504,7 +540,7 @@
                 });
                 if (response.ok || response.status === 204) {
                     listFiles();
-                } else {
+                } else if (!handleAuthError(response, 'listMessage')) {
                     showMessage('listMessage', 'Failed to delete file', 'error');
                 }
             } catch (error) {
@@ -528,6 +564,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     document.getElementById('authMode').value = data.mode;
+                    updateAuthWarning(data.mode);
                 }
             } catch (error) {
                 console.error('Failed to load auth status:', error);
@@ -545,6 +582,7 @@
                 if (response.ok) {
                     const data = await response.json();
                     document.getElementById('authMode').value = data.mode;
+                    updateAuthWarning(data.mode);
                     showMessage('authMessage', `Auth mode updated to "${data.mode}"`, 'success');
                 } else {
                     const data = await response.json();
