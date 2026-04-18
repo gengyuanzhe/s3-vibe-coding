@@ -98,8 +98,8 @@ public class AwsV4AuthenticationFilter implements Filter {
 
         String requestUri = httpRequest.getRequestURI();
 
-        // Health check and admin endpoints always bypassed
-        if ("/health".equals(requestUri) || requestUri.startsWith("/admin/")) {
+        // Static resources, health check, and admin endpoints always bypassed
+        if (isBypassed(requestUri, httpRequest)) {
             chain.doFilter(request, response);
             return;
         }
@@ -145,6 +145,26 @@ public class AwsV4AuthenticationFilter implements Filter {
         }
 
         chain.doFilter(cachedRequest, response);
+    }
+
+    private boolean isBypassed(String requestUri, HttpServletRequest request) {
+        if ("/health".equals(requestUri) || requestUri.startsWith("/admin/")) {
+            return true;
+        }
+        // Web UI static files
+        if ("/index.html".equals(requestUri)
+                || requestUri.endsWith(".css")
+                || requestUri.endsWith(".js")) {
+            return true;
+        }
+        // Root path serving web UI (Accept: text/html)
+        if ("/".equals(requestUri) || requestUri.isEmpty()) {
+            String accept = request.getHeader("Accept");
+            if (accept != null && accept.contains("text/html")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String extractAccessKeyId(String authHeader) {
