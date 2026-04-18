@@ -308,6 +308,24 @@
 
                 <div id="listMessage"></div>
             </div>
+
+            <!-- Auth Settings Card -->
+            <div class="card">
+                <h2>🔒 Auth Settings</h2>
+
+                <div class="form-group">
+                    <label for="authMode">Authentication Mode</label>
+                    <select id="authMode">
+                        <option value="aws-v4">aws-v4 (Strict)</option>
+                        <option value="both">both (Permissive)</option>
+                        <option value="none">none (Disabled)</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary" onclick="applyAuthMode()">Apply Settings</button>
+
+                <div id="authMessage"></div>
+            </div>
         </div>
     </div>
 
@@ -502,8 +520,44 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
 
-        // Initialize buckets on page load
+        // ==================== Auth Settings ====================
+
+        async function loadAuthStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/auth-status`);
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('authMode').value = data.mode;
+                }
+            } catch (error) {
+                console.error('Failed to load auth status:', error);
+            }
+        }
+
+        async function applyAuthMode() {
+            const mode = document.getElementById('authMode').value;
+            try {
+                const response = await fetch(`${API_BASE}/admin/auth-status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: mode })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('authMode').value = data.mode;
+                    showMessage('authMessage', `Auth mode updated to "${data.mode}"`, 'success');
+                } else {
+                    const data = await response.json();
+                    showMessage('authMessage', data.error || 'Failed to update auth mode', 'error');
+                }
+            } catch (error) {
+                showMessage('authMessage', 'Failed to update auth mode', 'error');
+            }
+        }
+
+        // Initialize on page load
         listBuckets();
+        loadAuthStatus();
     </script>
 </body>
 </html>
