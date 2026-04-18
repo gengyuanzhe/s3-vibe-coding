@@ -79,8 +79,8 @@ class S3StorageIntegrationTest {
                 "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n" +
                 "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n" +
                 "        <init-param>\n" +
-                "            <param-name>auth.enabled</param-name>\n" +
-                "            <param-value>false</param-value>\n" +
+                "            <param-name>auth.mode</param-name>\n" +
+                "            <param-value>none</param-value>\n" +
                 "        </init-param>\n" +
                 "    </filter>\n" +
                 "    <filter-mapping>\n" +
@@ -478,6 +478,51 @@ class S3StorageIntegrationTest {
             String body = EntityUtils.toString(response.getEntity());
             assertThat(body).contains("<!DOCTYPE html>");
             assertThat(body).contains("S3-Like Storage Service");
+        }
+    }
+
+    // ==================== Admin Auth Endpoint Tests ====================
+
+    @Test
+    @Order(70)
+    void getAuthStatus_shouldReturnCurrentMode() throws Exception {
+        HttpGet request = new HttpGet(apiUrl + "/admin/auth-status");
+
+        try (CloseableHttpResponse response = httpClient.execute(request)) {
+            assertThat(response.getCode()).isEqualTo(200);
+            assertThat(response.getHeader("Content-Type").getValue()).contains("application/json");
+
+            String body = EntityUtils.toString(response.getEntity());
+            assertThat(body).contains("\"mode\"");
+        }
+    }
+
+    @Test
+    @Order(71)
+    void setAuthStatus_shouldUpdateMode() throws Exception {
+        // Set to both
+        HttpPost setRequest = new HttpPost(apiUrl + "/admin/auth-status");
+        setRequest.setEntity(new StringEntity("{\"mode\":\"both\"}", ContentType.APPLICATION_JSON));
+
+        try (CloseableHttpResponse response = httpClient.execute(setRequest)) {
+            assertThat(response.getCode()).isEqualTo(200);
+
+            String body = EntityUtils.toString(response.getEntity());
+            assertThat(body).contains("\"mode\":\"both\"");
+        }
+
+        // Verify via GET
+        HttpGet getRequest = new HttpGet(apiUrl + "/admin/auth-status");
+        try (CloseableHttpResponse response = httpClient.execute(getRequest)) {
+            String body = EntityUtils.toString(response.getEntity());
+            assertThat(body).contains("\"mode\":\"both\"");
+        }
+
+        // Reset to none for subsequent tests
+        HttpPost resetRequest = new HttpPost(apiUrl + "/admin/auth-status");
+        resetRequest.setEntity(new StringEntity("{\"mode\":\"none\"}", ContentType.APPLICATION_JSON));
+        try (CloseableHttpResponse response = httpClient.execute(resetRequest)) {
+            EntityUtils.consume(response.getEntity());
         }
     }
 

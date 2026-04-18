@@ -77,10 +77,6 @@ class AwsSdkIntegrationTest {
                 "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n" +
                 "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n" +
                 "        <init-param>\n" +
-                "            <param-name>auth.enabled</param-name>\n" +
-                "            <param-value>true</param-value>\n" +
-                "        </init-param>\n" +
-                "        <init-param>\n" +
                 "            <param-name>auth.mode</param-name>\n" +
                 "            <param-value>aws-v4</param-value>\n" +
                 "        </init-param>\n" +
