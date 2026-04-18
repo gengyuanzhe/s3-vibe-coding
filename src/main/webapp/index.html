@@ -241,6 +241,18 @@
             margin-right: 8px;
         }
 
+        .section-title {
+            color: white;
+            font-size: 18px;
+            margin: 30px 0 15px 0;
+            padding-left: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .section-title:first-of-type {
+            margin-top: 0;
+        }
+
         @media (max-width: 768px) {
             .grid {
                 grid-template-columns: 1fr;
@@ -259,6 +271,8 @@
             <span><strong>Warning:</strong> Current auth mode is <code>aws-v4</code>. Web UI operations are unavailable because browsers cannot send AWS V4 signatures. Switch to <code>both</code> or <code>none</code> in Auth Settings below.</span>
         </div>
 
+        <!-- Storage Operations -->
+        <h3 class="section-title">Storage Operations</h3>
         <div class="grid">
             <!-- Bucket Management Card -->
             <div class="card">
@@ -329,7 +343,11 @@
 
                 <div id="listMessage"></div>
             </div>
+        </div>
 
+        <!-- System Settings -->
+        <h3 class="section-title">System Settings</h3>
+        <div class="grid">
             <!-- Auth Settings Card -->
             <div class="card">
                 <h2>🔒 Auth Settings</h2>
