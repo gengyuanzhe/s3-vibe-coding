@@ -150,6 +150,8 @@ S3 标准路径，无前缀。兼容 AWS SDK v2（需设置 `pathStyleAccessEnab
 | GET | `/{bucket}/{key}` | 下载文件 | 200 + Last-Modified + ETag |
 | DELETE | `/{bucket}/{key}` | 删除文件 | 204 空 body |
 | GET | `/health` | 健康检查 | 200 JSON |
+| GET | `/admin/auth-status` | 获取当前鉴权模式 | 200 JSON |
+| POST | `/admin/auth-status` | 设置鉴权模式 | 200 JSON |
 
 **查询参数**: `prefix` - 过滤以指定前缀开头的文件
 
@@ -351,8 +353,7 @@ secretKey.default=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 | 参数名 | 默认值 | 说明 |
 |--------|---------|------|
-| `auth.enabled` | `true` | 是否启用 V4 认证 |
-| `auth.mode` | `aws-v4` | 认证模式：`aws-v4` / `both` / `none` |
+| `auth.mode` | `aws-v4` | 认证模式：`aws-v4` / `both` / `none`，支持运行时动态切换 |
 | `auth.region` | `us-east-1` | AWS 区域 |
 | `auth.service` | `s3` | 服务名 |
 | `auth.time.skew.minutes` | `15` | 时间偏差容忍（分钟） |
@@ -518,8 +519,8 @@ A: 在 `web.xml` 中设置 `storage.root.dir` 参数
 ### Q: 裸 curl 请求返回 403
 A: 默认启用 V4 鉴权，裸请求被拒绝。使用 `python3 s3-curl.py` 或 AWS SDK 发送带签名的请求
 
-### Q: 如何关闭 V4 认证
-A: 在 `web.xml` 中设置 `auth.enabled` 为 `false`
+### Q: 如何切换 V4 认证模式
+A: 在 Web 管理界面的「Auth Settings」卡片中选择模式并点击「Apply Settings」，或通过 API 调用 `POST /admin/auth-status` 设置 `mode` 为 `none` / `both` / `aws-v4`
 
 ### Q: 如何添加新的 AK/SK
 A: 在 `src/main/resources/credentials.properties` 中添加新的 `accessKey.<label>` 和 `secretKey.<label>` 条目
