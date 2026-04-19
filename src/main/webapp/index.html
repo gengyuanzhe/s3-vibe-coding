@@ -37,43 +37,44 @@
         </div>
     </div>
 
-    <!-- Main Layout: Sidebar + Main Area + Console -->
-    <div class="flex flex-col min-h-screen">
-        <div class="flex flex-1 min-h-0">
-            <!-- Sidebar -->
-            <aside id="sidebar" class="w-60 bg-white border-r border-slate-200 flex flex-col">
-                <div class="p-4 border-b border-slate-200">
-                    <div class="flex items-center justify-between mb-4">
-                        <h1 class="text-lg font-bold text-slate-800">Buckets</h1>
-                        <button onclick="openNewBucketModal()" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                            New
-                        </button>
-                    </div>
-                    <button onclick="listBuckets()" class="w-full text-slate-500 hover:text-slate-700 text-sm flex items-center gap-2 py-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                        Refresh
+    <!-- Main Layout: Sidebar + Main Area -->
+    <div class="flex min-h-screen">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-60 bg-white border-r border-slate-200 flex flex-col">
+            <div class="p-4 border-b border-slate-200">
+                <div class="flex items-center justify-between mb-4">
+                    <h1 class="text-lg font-bold text-slate-800">Buckets</h1>
+                    <button onclick="openNewBucketModal()" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        New
                     </button>
                 </div>
+                <button onclick="listBuckets()" class="w-full text-slate-500 hover:text-slate-700 text-sm flex items-center gap-2 py-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Refresh
+                </button>
+            </div>
 
-                <!-- Bucket List -->
-                <div id="bucketList" class="flex-1 overflow-y-auto p-2 space-y-1">
-                    <!-- Buckets will be rendered here -->
-                </div>
+            <!-- Bucket List -->
+            <div id="bucketList" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <!-- Buckets will be rendered here -->
+            </div>
 
-                <!-- Auth Settings -->
-                <div class="p-4 border-t border-slate-200">
-                    <label class="block text-xs font-semibold text-slate-500 mb-2">Auth Mode</label>
-                    <select id="authMode" onchange="applyAuthMode()" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="aws-v4">aws-v4 (Strict)</option>
-                        <option value="both">both (Permissive)</option>
-                        <option value="none">none (Disabled)</option>
-                    </select>
-                </div>
-            </aside>
+            <!-- Auth Settings -->
+            <div class="p-4 border-t border-slate-200">
+                <label class="block text-xs font-semibold text-slate-500 mb-2">Auth Mode</label>
+                <select id="authMode" onchange="applyAuthMode()" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="aws-v4">aws-v4 (Strict)</option>
+                    <option value="both">both (Permissive)</option>
+                    <option value="none">none (Disabled)</option>
+                </select>
+            </div>
+        </aside>
 
-            <!-- Main Area -->
-            <main id="mainArea" class="flex-1 p-6 overflow-y-auto">
+        <!-- Main Area -->
+        <main id="mainArea" class="flex-1 flex flex-col">
+            <!-- Content Area (scrollable) -->
+            <div class="flex-1 p-6 overflow-y-auto">
                 <!-- Empty State -->
                 <div id="emptyState" class="flex flex-col items-center justify-center h-full text-slate-400">
                     <svg class="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
@@ -113,19 +114,19 @@
                         </div>
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
 
-        <!-- Execution Log (Fixed at bottom) -->
-        <div class="bg-slate-900 border-t border-slate-700">
-            <div class="bg-slate-800 px-4 py-2 flex items-center justify-between">
-                <span class="text-slate-400 text-xs font-mono">Execution Log</span>
-                <button onclick="clearConsole()" class="text-slate-500 hover:text-slate-300 text-xs transition-colors">Clear</button>
+            <!-- Execution Log (Fixed at Main Area bottom) -->
+            <div class="bg-slate-900 border-t border-slate-700">
+                <div class="bg-slate-800 px-4 py-2 flex items-center justify-between">
+                    <span class="text-slate-400 text-xs font-mono">Execution Log</span>
+                    <button onclick="clearConsole()" class="text-slate-500 hover:text-slate-300 text-xs transition-colors">Clear</button>
+                </div>
+                <div id="consoleOutput" class="p-4 h-32 overflow-y-auto font-mono text-sm text-emerald-400 leading-relaxed console-scroll">
+                    > Ready for operations...
+                </div>
             </div>
-            <div id="consoleOutput" class="p-4 h-32 overflow-y-auto font-mono text-sm text-emerald-400 leading-relaxed console-scroll">
-                > Ready for operations...
-            </div>
-        </div>
+        </main>
     </div>
 
     <!-- Modals Container -->
