@@ -196,7 +196,148 @@
             loadAuthStatus();
         });
 
-        // ... rest of JavaScript will be added in Task 2
+        // ==================== Bucket Management ====================
+
+        async function listBuckets() {
+            try {
+                const response = await fetch(`${API_BASE}/`);
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        showToast('Access denied. Check auth mode.', 'error');
+                        return;
+                    }
+                    throw new Error('Failed to fetch buckets');
+                }
+                const xmlText = await response.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                const bucketNames = xmlDoc.getElementsByTagName('Name');
+
+                const bucketListEl = document.getElementById('bucketList');
+                bucketListEl.innerHTML = '';
+
+                if (bucketNames.length === 0) {
+                    bucketListEl.innerHTML = '<div class="text-center text-slate-400 text-sm py-4">No buckets</div>';
+                    return;
+                }
+
+                for (let i = 0; i < bucketNames.length; i++) {
+                    const name = bucketNames[i].textContent;
+                    const isSelected = selectedBucket === name;
+                    const bucketItem = document.createElement('div');
+                    bucketItem.className = isSelected
+                        ? 'bg-blue-50 border-l-3 border-blue-500 text-blue-700 px-3 py-2 rounded-r-lg cursor-pointer font-medium'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 px-3 py-2 rounded-lg cursor-pointer';
+                    bucketItem.innerHTML = `
+                        <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                        ${name}
+                    `;
+                    bucketItem.onclick = () => selectBucket(name);
+                    bucketListEl.appendChild(bucketItem);
+                }
+
+                logToConsole(`Loaded ${bucketNames.length} bucket(s)`);
+            } catch (error) {
+                showToast('Failed to load buckets', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function selectBucket(name) {
+            selectedBucket = name;
+            document.getElementById('emptyState').classList.add('hidden');
+            document.getElementById('bucketContent').classList.remove('hidden');
+            document.getElementById('selectedBucketName').textContent = name;
+            listBuckets(); // Refresh sidebar highlighting
+            listFiles();
+        }
+
+        function openNewBucketModal() {
+            document.getElementById('newBucketModal').classList.remove('hidden');
+            document.getElementById('newBucketName').value = '';
+            document.getElementById('newBucketName').focus();
+        }
+
+        function closeNewBucketModal() {
+            document.getElementById('newBucketModal').classList.add('hidden');
+        }
+
+        async function createBucket() {
+            const bucketName = document.getElementById('newBucketName').value.trim();
+            if (!bucketName) {
+                showToast('Please enter a bucket name', 'error');
+                return;
+            }
+
+            try {
+                logToConsole(`Creating bucket: ${bucketName}...`);
+                const response = await fetch(`${API_BASE}/${bucketName}`, { method: 'PUT' });
+                if (response.ok) {
+                    showToast('Bucket created successfully', 'success');
+                    logToConsole(`Bucket created: ${bucketName}`);
+                    closeNewBucketModal();
+                    listBuckets();
+                    selectBucket(bucketName);
+                } else if (response.status === 403) {
+                    showToast('Access denied. Check auth mode.', 'error');
+                    logToConsole('Error: Access denied', 'error');
+                } else if (response.status === 409) {
+                    showToast('Bucket already exists', 'error');
+                    logToConsole('Error: Bucket already exists', 'error');
+                } else {
+                    showToast('Failed to create bucket', 'error');
+                    logToConsole('Error: Failed to create bucket', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to create bucket', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function openDeleteBucketModal() {
+            if (!selectedBucket) return;
+            deleteTarget = { type: 'bucket', bucket: selectedBucket };
+            document.getElementById('deleteModalTitle').textContent = 'Delete Bucket';
+            document.getElementById('deleteModalMessage').textContent = `Are you sure you want to delete "${selectedBucket}"? The bucket must be empty.`;
+            document.getElementById('deleteConfirmBtn').onclick = deleteBucket;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        async function deleteBucket() {
+            if (!deleteTarget || deleteTarget.type !== 'bucket') return;
+            const bucket = deleteTarget.bucket;
+
+            try {
+                logToConsole(`Deleting bucket: ${bucket}...`);
+                const response = await fetch(`${API_BASE}/${bucket}`, { method: 'DELETE' });
+                if (response.ok || response.status === 204) {
+                    showToast('Bucket deleted successfully', 'success');
+                    logToConsole(`Bucket deleted: ${bucket}`);
+                    closeDeleteModal();
+                    selectedBucket = null;
+                    document.getElementById('emptyState').classList.remove('hidden');
+                    document.getElementById('bucketContent').classList.add('hidden');
+                    listBuckets();
+                } else if (response.status === 403) {
+                    showToast('Access denied', 'error');
+                    logToConsole('Error: Access denied', 'error');
+                } else if (response.status === 409) {
+                    showToast('Bucket is not empty', 'error');
+                    logToConsole('Error: Bucket not empty', 'error');
+                } else {
+                    showToast('Failed to delete bucket', 'error');
+                    logToConsole('Error: Failed to delete bucket', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to delete bucket', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+            deleteTarget = null;
+        }
     </script>
 </body>
 </html>
