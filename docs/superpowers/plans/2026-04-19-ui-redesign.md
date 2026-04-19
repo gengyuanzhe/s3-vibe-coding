@@ -1,3 +1,36 @@
+# UI Redesign Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rewrite `src/main/webapp/index.html` with Tailwind CSS sidebar layout, modals, toasts, and console panel.
+
+**Architecture:** Single-file HTML rewrite. All HTML + CSS + JS inline. No backend changes. Preserves all existing API endpoints and behavior.
+
+**Tech Stack:** Tailwind CSS (CDN), Inter font (Google Fonts), inline SVG icons, vanilla JS.
+
+---
+
+### Task 1: Write the complete new index.html
+
+**Files:**
+- Modify: `src/main/webapp/index.html` (complete rewrite)
+
+- [ ] **Step 1: Back up current file and write the new index.html**
+
+Replace the entire contents of `src/main/webapp/index.html` with the following complete file. This is a single atomic write — the full file is self-contained.
+
+The file contains:
+- `<head>`: Tailwind CDN, Inter font, custom CSS (toast animation, console scrollbar, modal overlay)
+- `<body>`: Auth warning banner, sidebar, main area (header + file table + console), 3 modal dialogs, toast container
+- `<script>`: State management, API helper, console/toast/modal utilities, bucket/file/auth operations, init
+
+See the full file content in Step 2.
+
+- [ ] **Step 2: Write the complete file**
+
+Write this exact content to `src/main/webapp/index.html`:
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -34,14 +67,9 @@
     <div class="flex flex-1 overflow-hidden">
         <!-- Sidebar -->
         <aside id="sidebar" class="hidden md:flex w-56 bg-white border-r border-slate-200 flex-col flex-shrink-0">
-            <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                    <h1 class="text-lg font-bold text-slate-800 tracking-tight">S3 Storage</h1>
-                    <p class="text-xs text-slate-400 mt-0.5">Bucket Manager</p>
-                </div>
-                <button onclick="openModal('authModal')" class="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Auth Settings">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-                </button>
+            <div class="p-4 border-b border-slate-100">
+                <h1 class="text-lg font-bold text-slate-800 tracking-tight">S3 Storage</h1>
+                <p class="text-xs text-slate-400 mt-0.5">Bucket Manager</p>
             </div>
             <div class="px-3 pt-4 pb-2">
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Buckets</span>
@@ -63,14 +91,14 @@
                     <option value="">Select bucket...</option>
                 </select>
                 <div class="flex gap-2">
-                    <button onclick="openModal('createBucketModal')" class="p-2 bg-indigo-600 text-white rounded-lg" title="Create Bucket">
+                    <button onclick="openModal('createBucketModal')" class="p-2 bg-indigo-600 text-white rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                     </button>
-                    <button onclick="openUploadModal()" class="p-2 bg-slate-100 text-slate-600 rounded-lg" title="Upload File">
+                    <button onclick="openUploadModal()" class="p-2 bg-slate-100 text-slate-600 rounded-lg">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                     </button>
-                    <button onclick="openModal('authModal')" class="p-2 text-slate-400 hover:text-indigo-600 rounded-lg" title="Auth Settings">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <button onclick="openModal('authModal')" class="p-2 bg-slate-100 text-slate-600 rounded-lg">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                     </button>
                 </div>
             </div>
@@ -82,6 +110,10 @@
                     <p id="objectCount" class="text-xs text-slate-400 mt-0.5">No bucket selected</p>
                 </div>
                 <div id="actionButtons" class="hidden md:flex items-center gap-2">
+                    <button onclick="openModal('authModal')" class="px-4 py-2 bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        Auth
+                    </button>
                     <button id="uploadBtn" onclick="openUploadModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                         Upload
@@ -207,9 +239,9 @@
     <div id="toastContainer" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col items-center gap-2 pointer-events-none"></div>
 
     <script>
-        var API_BASE = window.location.origin;
+        const API_BASE = window.location.origin;
 
-        var state = {
+        let state = {
             buckets: [],
             selectedBucket: null,
             files: [],
@@ -273,14 +305,14 @@
                 var response = await fetch(API_BASE + path, Object.assign({ method: method }, options));
                 if (response.status === 403) {
                     showToast('Access denied. Switch auth to "both" or "none"', 'error');
-                    appendConsole(method + ' ' + path + ' \u2192 403 Forbidden', true);
+                    appendConsole(method + ' ' + path + ' -> 403 Forbidden', true);
                     return null;
                 }
                 var marker = response.ok ? '\u2713' : '\u2717';
-                appendConsole(marker + ' ' + method + ' ' + path + ' \u2192 ' + response.status + ' ' + response.statusText);
+                appendConsole(marker + ' ' + method + ' ' + path + ' -> ' + response.status + ' ' + response.statusText);
                 return response;
             } catch (error) {
-                appendConsole(method + ' ' + path + ' \u2192 Network error: ' + error.message, true);
+                appendConsole(method + ' ' + path + ' -> Network error: ' + error.message, true);
                 showToast('Network error', 'error');
                 return null;
             }
@@ -546,3 +578,94 @@
     </script>
 </body>
 </html>
+```
+
+- [ ] **Step 3: Verify the file was written correctly**
+
+Run: `head -5 src/main/webapp/index.html`
+Expected: `<!DOCTYPE html>`, `<html lang="en">`, etc.
+
+---
+
+### Task 2: Start server and manually test
+
+**Files:** None (manual verification)
+
+- [ ] **Step 1: Start the server**
+
+Run: `mvn exec:java`
+
+- [ ] **Step 2: Open browser to http://localhost:8080**
+
+Verify:
+1. Page loads with Tailwind styling (slate background, white sidebar)
+2. Sidebar shows "S3 Storage" title and "Create Bucket" button
+3. Main area shows "Select a bucket" and empty state
+4. Console panel at bottom shows "Ready."
+5. No JavaScript errors in browser console
+
+- [ ] **Step 3: Test auth mode switch**
+
+1. Click "Auth" button in header
+2. Modal opens with auth mode selector
+3. Switch to "both" mode and click "Apply Settings"
+4. Verify toast notification appears
+5. Verify warning banner disappears
+6. Verify console logs show the API call
+
+- [ ] **Step 4: Test bucket CRUD**
+
+1. Click "Create Bucket" in sidebar
+2. Enter bucket name, click create
+3. Verify toast "Bucket created"
+4. Verify sidebar shows new bucket
+5. Click the bucket in sidebar
+6. Verify main area shows bucket name and "No files" message
+7. Click "Delete" button, confirm
+8. Verify toast "Bucket deleted"
+
+- [ ] **Step 5: Test file upload/download/delete**
+
+1. Create a bucket, select it
+2. Click "Upload" button
+3. Modal opens, select a file, click upload
+4. Verify toast "File uploaded"
+5. Verify file appears in table with correct name, size, date
+6. Click "Download" — file downloads
+7. Click "Delete" — confirm, verify file removed
+
+- [ ] **Step 6: Test responsive (mobile)**
+
+Resize browser to < 768px:
+1. Sidebar hides
+2. Mobile header appears with dropdown bucket selector
+3. Select bucket from dropdown — files load
+4. Console still visible at bottom
+
+---
+
+### Task 3: Commit
+
+**Files:**
+- Modified: `src/main/webapp/index.html`
+
+- [ ] **Step 1: Commit the changes**
+
+```bash
+git add src/main/webapp/index.html
+git commit -m "feat: redesign web UI with Tailwind CSS sidebar layout
+
+- Replace plain CSS with Tailwind CSS (CDN) and Inter font
+- Add sidebar bucket navigation with active state highlighting
+- Add file table with download/delete actions
+- Add modal dialogs for create bucket, upload file, auth settings
+- Add toast notifications with animated fade-in/fade-out
+- Add dark console panel for API request/response logging
+- Add responsive mobile layout with dropdown bucket selector
+- Preserve all existing API endpoints and behavior"
+```
+
+- [ ] **Step 2: Verify commit**
+
+Run: `git log -1 --oneline`
+Expected: commit with message "feat: redesign web UI..."
