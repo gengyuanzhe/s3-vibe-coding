@@ -130,7 +130,7 @@
                     </webApp>
                     <httpConnector>
                         <host>0.0.0.0</host>
-                        <port>8080</port>
+                        <port>5080</port>
                     </httpConnector>
                     <systemProperties>
                         <systemProperty>

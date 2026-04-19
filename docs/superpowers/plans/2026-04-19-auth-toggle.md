@@ -636,7 +636,7 @@ Remove the `auth.enabled` init-param block (lines 46-49), and add the `AuthAdmin
 
     <context-param>
         <param-name>health.monitor.base.url</param-name>
-        <param-value>http://localhost:8080</param-value>
+        <param-value>http://localhost:5080</param-value>
     </context-param>
 
     <!-- Health Monitor Listener -->

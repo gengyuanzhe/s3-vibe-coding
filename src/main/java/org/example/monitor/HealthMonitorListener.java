@@ -21,7 +21,7 @@ public class HealthMonitorListener implements ServletContextListener {
 
     private static final boolean DEFAULT_ENABLED = true;
     private static final long DEFAULT_INTERVAL = 10;
-    private static final String DEFAULT_BASE_URL = "http://localhost:8080";
+    private static final String DEFAULT_BASE_URL = "http://localhost:5080";
 
     private HealthMonitor healthMonitor;
 

@@ -18,12 +18,12 @@ public class Main {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) {
-        int port = 8080;
+        int port = 5080;
         if (args.length > 0) {
             try {
                 port = Integer.parseInt(args[0]);
             } catch (NumberFormatException e) {
-                logger.warn("Invalid port number provided, using default port 8080");
+                logger.warn("Invalid port number provided, using default port 5080");
             }
         }
 

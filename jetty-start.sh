@@ -8,7 +8,7 @@ set -e
 # Configuration
 JETTY_HOME_DIR="${JETTY_HOME_DIR:-jetty-home-12.0.15}"
 JETTY_BASE_DIR="${JETTY_BASE_DIR:-jetty-base}"
-PORT="${PORT:-8080}"
+PORT="${PORT:-5080}"
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

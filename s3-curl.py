@@ -18,7 +18,7 @@ import os
 import boto3
 from botocore.config import Config
 
-ENDPOINT = os.environ.get("S3_ENDPOINT", "http://localhost:8080")
+ENDPOINT = os.environ.get("S3_ENDPOINT", "http://localhost:5080")
 ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"
 SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 

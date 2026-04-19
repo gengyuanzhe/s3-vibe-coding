@@ -59,7 +59,7 @@ s3-vibe-coding/
 - **S3Servlet 映射**: `/*` 直接处理所有 S3 路径
 - **Web 界面**: `GET /` 带 `Accept: text/html` 时返回 index.html
 - **S3 API**: `/{bucket}/{key}` 标准 S3 路径，无需 `/api/` 前缀
-- **AWS SDK 兼容**: `endpointOverride(URI.create("http://localhost:8080"))` 直接对接
+- **AWS SDK 兼容**: `endpointOverride(URI.create("http://localhost:5080"))` 直接对接
 
 ### 3. AWS Signature V4 鉴权
 - **Authorization Header 格式**: `AWS4-HMAC-SHA256 Credential=AKID/date/region/s3/aws4_request, SignedHeaders=..., Signature=...`
@@ -109,7 +109,7 @@ s3-vibe-coding/
 ### 方式一：Main 类启动（开发推荐）
 
 ```bash
-# 启动（默认端口 8080）
+# 启动（默认端口 5080）
 mvn exec:java
 
 # 指定端口
@@ -133,8 +133,8 @@ PORT=9000 ./jetty-start.sh
 ```
 
 服务器启动后访问：
-- Web 界面: http://localhost:8080/
-- 健康检查: http://localhost:8080/health
+- Web 界面: http://localhost:5080/
+- 健康检查: http://localhost:5080/health
 
 ## API 接口
 
@@ -162,7 +162,7 @@ S3 标准路径，无前缀。兼容 AWS SDK v2（需设置 `pathStyleAccessEnab
 ### 健康检查（无需鉴权）
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:5080/health
 # {"status":"ok","service":"s3-storage"}
 ```
 
@@ -215,7 +215,7 @@ from botocore.config import Config
 
 s3 = boto3.client(
     "s3",
-    endpoint_url="http://localhost:8080",
+    endpoint_url="http://localhost:5080",
     aws_access_key_id="AKIAIOSFODNN7EXAMPLE",
     aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
     region_name="us-east-1",
@@ -249,7 +249,7 @@ s3.delete_object(Bucket="my-bucket", Key="hello.txt")
 
 ```java
 S3Client s3Client = S3Client.builder()
-        .endpointOverride(URI.create("http://localhost:8080"))
+        .endpointOverride(URI.create("http://localhost:5080"))
         .region(Region.US_EAST_1)
         .credentialsProvider(StaticCredentialsProvider.create(
                 AwsBasicCredentials.create("AKIAIOSFODNN7EXAMPLE",
@@ -365,7 +365,7 @@ secretKey.default=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 |--------|---------|------|
 | `health.monitor.enabled` | `true` | 是否启用健康监控 |
 | `health.monitor.interval.seconds` | `10` | 检查间隔（秒） |
-| `health.monitor.base.url` | `http://localhost:8080` | 检测基础 URL |
+| `health.monitor.base.url` | `http://localhost:5080` | 检测基础 URL |
 
 ## 错误码映射
 
@@ -382,7 +382,7 @@ secretKey.default=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 ## Web 界面
 
-**访问地址**: http://localhost:8080/
+**访问地址**: http://localhost:5080/
 
 **技术**: 纯 HTML + CSS + JavaScript（Fetch API）
 
