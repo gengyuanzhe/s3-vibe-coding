@@ -347,6 +347,224 @@
             document.getElementById('deleteModal').classList.add('hidden');
             deleteTarget = null;
         }
+
+        // ==================== File Operations ====================
+
+        async function listFiles() {
+            if (!selectedBucket) return;
+
+            try {
+                logToConsole(`Loading files in ${selectedBucket}...`);
+                const response = await fetch(`${API_BASE}/${selectedBucket}`);
+                if (!response.ok) {
+                    if (response.status === 403) {
+                        showToast('Access denied. Check auth mode.', 'error');
+                        return;
+                    }
+                    throw new Error('Failed to fetch files');
+                }
+
+                const xmlText = await response.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                const contents = xmlDoc.getElementsByTagName('Contents');
+
+                const fileListEl = document.getElementById('fileList');
+                fileListEl.innerHTML = '';
+
+                let totalSize = 0;
+                const files = [];
+
+                for (let i = 0; i < contents.length; i++) {
+                    const keyEl = contents[i].getElementsByTagName('Key')[0];
+                    const sizeEl = contents[i].getElementsByTagName('Size')[0];
+                    const key = keyEl ? keyEl.textContent : '';
+                    const size = sizeEl ? parseInt(sizeEl.textContent, 10) : 0;
+                    files.push({ key, size });
+                    totalSize += size;
+                }
+
+                // Update stats
+                document.getElementById('bucketStats').textContent =
+                    `${files.length} object(s), ${formatSize(totalSize)} total`;
+
+                if (files.length === 0) {
+                    const emptyRow = document.createElement('div');
+                    emptyRow.className = 'px-4 py-8 text-center text-slate-400 text-sm';
+                    emptyRow.textContent = 'No files in this bucket';
+                    fileListEl.appendChild(emptyRow);
+                    logToConsole('Bucket is empty');
+                    return;
+                }
+
+                // Render files using DOM API (XSS-safe)
+                files.forEach(file => {
+                    const fileRow = document.createElement('div');
+                    fileRow.className = 'px-4 py-3 grid grid-cols-12 items-center hover:bg-slate-50 transition-colors';
+
+                    // Icon + Name column
+                    const nameCol = document.createElement('div');
+                    nameCol.className = 'col-span-6 flex items-center gap-3';
+
+                    const fileIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    fileIcon.setAttribute('class', 'w-5 h-5 text-slate-400 flex-shrink-0');
+                    fileIcon.setAttribute('fill', 'none');
+                    fileIcon.setAttribute('stroke', 'currentColor');
+                    fileIcon.setAttribute('viewBox', '0 0 24 24');
+                    const iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    iconPath.setAttribute('stroke-linecap', 'round');
+                    iconPath.setAttribute('stroke-linejoin', 'round');
+                    iconPath.setAttribute('stroke-width', '2');
+                    iconPath.setAttribute('d', 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z');
+                    fileIcon.appendChild(iconPath);
+
+                    const fileNameSpan = document.createElement('span');
+                    fileNameSpan.className = 'text-slate-700 text-sm truncate';
+                    fileNameSpan.textContent = file.key;
+
+                    nameCol.appendChild(fileIcon);
+                    nameCol.appendChild(fileNameSpan);
+
+                    // Size column
+                    const sizeCol = document.createElement('div');
+                    sizeCol.className = 'col-span-3 text-slate-500 text-sm';
+                    sizeCol.textContent = formatSize(file.size);
+
+                    // Actions column
+                    const actionsCol = document.createElement('div');
+                    actionsCol.className = 'col-span-3 flex items-center justify-center gap-2';
+
+                    // Download button
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors';
+                    downloadBtn.textContent = 'Download';
+                    downloadBtn.onclick = () => downloadFile(selectedBucket, file.key);
+
+                    // Delete button
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'text-red-600 hover:text-red-800 text-sm font-medium transition-colors';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.onclick = () => openDeleteFileModal(selectedBucket, file.key);
+
+                    actionsCol.appendChild(downloadBtn);
+                    actionsCol.appendChild(deleteBtn);
+
+                    fileRow.appendChild(nameCol);
+                    fileRow.appendChild(sizeCol);
+                    fileRow.appendChild(actionsCol);
+
+                    fileListEl.appendChild(fileRow);
+                });
+
+                logToConsole(`Loaded ${files.length} file(s)`);
+            } catch (error) {
+                showToast('Failed to load files', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function openUploadModal() {
+            if (!selectedBucket) return;
+            document.getElementById('uploadModal').classList.remove('hidden');
+            document.getElementById('uploadFileName').value = '';
+            document.getElementById('uploadFileInput').value = '';
+            document.getElementById('uploadFileInput').focus();
+        }
+
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.add('hidden');
+        }
+
+        async function uploadFile() {
+            if (!selectedBucket) return;
+
+            const fileInput = document.getElementById('uploadFileInput');
+            const customName = document.getElementById('uploadFileName').value.trim();
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                showToast('Please select a file', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const key = customName || file.name;
+
+            try {
+                logToConsole(`Uploading ${key}...`);
+                closeUploadModal();
+
+                const response = await fetch(`${API_BASE}/${selectedBucket}/${key}`, {
+                    method: 'PUT',
+                    body: file
+                });
+
+                if (response.ok) {
+                    showToast('File uploaded successfully', 'success');
+                    logToConsole(`File uploaded: ${key}`);
+                    listFiles();
+                } else if (response.status === 403) {
+                    showToast('Access denied. Check auth mode.', 'error');
+                    logToConsole('Error: Access denied', 'error');
+                } else if (response.status === 413) {
+                    showToast('File too large', 'error');
+                    logToConsole('Error: File too large', 'error');
+                } else {
+                    showToast('Failed to upload file', 'error');
+                    logToConsole(`Error: Failed to upload file (status ${response.status})`, 'error');
+                }
+            } catch (error) {
+                showToast('Failed to upload file', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function downloadFile(bucket, key) {
+            const url = `${API_BASE}/${bucket}/${key}`;
+            logToConsole(`Downloading: ${key}`);
+            window.open(url, '_blank');
+        }
+
+        function openDeleteFileModal(bucket, key) {
+            deleteTarget = { type: 'file', bucket, key };
+            document.getElementById('deleteModalTitle').textContent = 'Delete File';
+            document.getElementById('deleteModalMessage').textContent = `Are you sure you want to delete "${key}"?`;
+            document.getElementById('deleteConfirmBtn').onclick = deleteFile;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        async function deleteFile() {
+            if (!deleteTarget || deleteTarget.type !== 'file') return;
+            const { bucket, key } = deleteTarget;
+
+            try {
+                logToConsole(`Deleting file: ${key}...`);
+                const response = await fetch(`${API_BASE}/${bucket}/${key}`, { method: 'DELETE' });
+
+                if (response.ok || response.status === 204) {
+                    showToast('File deleted successfully', 'success');
+                    logToConsole(`File deleted: ${key}`);
+                    closeDeleteModal();
+                    listFiles();
+                } else if (response.status === 403) {
+                    showToast('Access denied', 'error');
+                    logToConsole('Error: Access denied', 'error');
+                } else {
+                    showToast('Failed to delete file', 'error');
+                    logToConsole('Error: Failed to delete file', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to delete file', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            const k = 1024;
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + units[i];
+        }
     </script>
 </body>
 </html>
