@@ -384,13 +384,18 @@ secretKey.default=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 
 **访问地址**: http://localhost:5080/
 
-**技术**: 纯 HTML + CSS + JavaScript（Fetch API）
+**技术**: Tailwind CSS + vanilla JavaScript (Fetch API)
+
+**布局**: Sidebar + Main Area
+- Sidebar: 桶列表导航 + 新建桶按钮 + Auth 设置下拉框
+- Main Area: 桶详情 + 文件表格 + 执行日志终端
 
 **功能**:
-- 创建/删除桶
-- 上传文件（支持自定义文件名）
-- 列出/下载/删除文件
-- 桶选择下拉框自动更新
+- Sidebar 桶列表点击选择
+- 模态框：新建桶、上传文件、删除确认
+- Toast 通知：操作反馈（成功/错误/警告）
+- 终端日志：操作历史实时显示
+- SVG 图标：替代 emoji，更专业外观
 
 **注意**: Web 界面使用 `API_BASE = window.location.origin`（S3 标准路径，无 `/api` 前缀）
 
