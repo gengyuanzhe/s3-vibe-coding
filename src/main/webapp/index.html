@@ -565,6 +565,107 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + units[i];
         }
+
+        // ==================== Auth Settings ====================
+
+        async function loadAuthStatus() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/auth-status`);
+                if (!response.ok) {
+                    logToConsole('Failed to load auth status', 'error');
+                    return;
+                }
+                const data = await response.json();
+                document.getElementById('authMode').value = data.mode;
+                updateAuthWarning(data.mode);
+                logToConsole(`Auth mode: ${data.mode}`);
+            } catch (error) {
+                logToConsole(`Error loading auth status: ${error.message}`, 'error');
+            }
+        }
+
+        async function applyAuthMode() {
+            const mode = document.getElementById('authMode').value;
+            try {
+                logToConsole(`Applying auth mode: ${mode}...`);
+                const response = await fetch(`${API_BASE}/admin/auth-status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                if (response.ok) {
+                    showToast('Auth mode updated', 'success');
+                    updateAuthWarning(mode);
+                    logToConsole(`Auth mode changed to: ${mode}`);
+                } else {
+                    showToast('Failed to update auth mode', 'error');
+                    logToConsole('Error: Failed to update auth mode', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to update auth mode', 'error');
+                logToConsole(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        function updateAuthWarning(mode) {
+            const warning = document.getElementById('authWarning');
+            if (mode === 'aws-v4') {
+                warning.classList.remove('hidden');
+            } else {
+                warning.classList.add('hidden');
+            }
+        }
+
+        // ==================== Toast & Console ====================
+
+        function showToast(message, type) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+
+            const colors = {
+                success: 'bg-emerald-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500',
+                warn: 'bg-yellow-500'
+            };
+
+            const icons = {
+                success: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>',
+                error: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>',
+                info: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+                warn: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.542 0 2.18-1.193 1.542-2.18L12.546 4.18c-.68-1.18-2.18-1.18-2.86 0L3.498 16.82c-.68.987.02 2.18 1.542 2.18z"/></svg>'
+            };
+
+            toast.className = `toast ${colors[type] || colors.info} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2`;
+            toast.innerHTML = `${icons[type] || icons.info}<span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        function logToConsole(message, type) {
+            const consoleOutput = document.getElementById('consoleOutput');
+            const line = document.createElement('div');
+
+            const colors = {
+                success: 'text-emerald-400',
+                error: 'text-red-400',
+                info: 'text-blue-400',
+                warn: 'text-yellow-400'
+            };
+
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+            line.className = colors[type] || 'text-emerald-400';
+            line.textContent = `[${timestamp}] ${message}`;
+
+            consoleOutput.appendChild(line);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        function clearConsole() {
+            const consoleOutput = document.getElementById('consoleOutput');
+            consoleOutput.innerHTML = '> Ready for operations...';
+        }
     </script>
 </body>
 </html>
