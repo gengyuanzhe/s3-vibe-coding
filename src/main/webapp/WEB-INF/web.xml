@@ -77,6 +77,17 @@
         <url-pattern>/admin/*</url-pattern>
     </servlet-mapping>
 
+    <!-- Origin Config Admin Servlet -->
+    <servlet>
+        <servlet-name>OriginConfigServlet</servlet-name>
+        <servlet-class>org.example.servlet.OriginConfigServlet</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+        <servlet-name>OriginConfigServlet</servlet-name>
+        <url-pattern>/admin/origin-config/*</url-pattern>
+    </servlet-mapping>
+
     <!-- S3-Like Servlet -->
     <servlet>
         <servlet-name>S3Servlet</servlet-name>
