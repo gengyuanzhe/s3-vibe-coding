@@ -6,8 +6,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import com.sun.net.httpserver.HttpServer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -153,5 +159,199 @@ class OriginProxyServiceTest {
         OriginConfig parsed = OriginConfig.fromJson(json);
         assertThat(parsed).isNotNull();
         assertThat(parsed.getOriginUrl()).isEqualTo("https://origin.example.com");
+    }
+
+    // ── Proxy execution tests ────────────────────────────────────────
+
+    @Test
+    void proxyRequest_shouldForwardGetObjectToOrigin() throws Exception {
+        // Given - mock upstream server
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/origin-bucket/test-key.txt", exchange -> {
+            byte[] body = "hello from origin".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            createBucket("test-bucket");
+            OriginConfig config = new OriginConfig(
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+            );
+            originProxyService.saveOriginConfig("test-bucket", config);
+
+            // When
+            OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                    "test-bucket", "test-key.txt", "GET", null
+            );
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getStatusCode()).isEqualTo(200);
+            assertThat(result.getBody()).isEqualTo("hello from origin".getBytes(StandardCharsets.UTF_8));
+            assertThat(result.getHeaders()).containsEntry("content-type", "text/plain");
+            assertThat(result.getErrorCode()).isNull();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void proxyRequest_shouldReturnNullWhenNoConfig() throws Exception {
+        // Given - bucket exists but has no origin config
+        createBucket("test-bucket");
+
+        // When
+        OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                "test-bucket", "any-key.txt", "GET", null
+        );
+
+        // Then
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void proxyRequest_shouldReturnNullWhenPrefixDoesNotMatch() throws Exception {
+        // Given
+        createBucket("test-bucket");
+        OriginConfig config = new OriginConfig(
+                "http://127.0.0.1:1", "origin-bucket", "media/", "cache", null
+        );
+        originProxyService.saveOriginConfig("test-bucket", config);
+
+        // When
+        OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                "test-bucket", "docs/readme.txt", "GET", null
+        );
+
+        // Then
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void proxyRequest_shouldReturn502OnUpstreamError() throws Exception {
+        // Given - config points to localhost:1 where nothing is listening
+        createBucket("test-bucket");
+        OriginConfig config = new OriginConfig(
+                "http://127.0.0.1:1", "origin-bucket", null, "cache", null
+        );
+        originProxyService.saveOriginConfig("test-bucket", config);
+
+        // When
+        OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                "test-bucket", "test-key.txt", "GET", null
+        );
+
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getStatusCode()).isEqualTo(502);
+        assertThat(result.getErrorCode()).isEqualTo("OriginError");
+        assertThat(result.getBody()).isNull();
+    }
+
+    @Test
+    void proxyRequest_shouldPassthroughUpstream404() throws Exception {
+        // Given - mock upstream returns 404
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/origin-bucket/missing-key.txt", exchange -> {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            createBucket("test-bucket");
+            OriginConfig config = new OriginConfig(
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+            );
+            originProxyService.saveOriginConfig("test-bucket", config);
+
+            // When
+            OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                    "test-bucket", "missing-key.txt", "GET", null
+            );
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getStatusCode()).isEqualTo(404);
+            assertThat(result.getErrorCode()).isEqualTo("NoSuchKey");
+            assertThat(result.getBody()).isNull();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void proxyRequest_shouldHandleHeadRequest() throws Exception {
+        // Given - mock upstream returns 200 with Content-Length but no body for HEAD
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/origin-bucket/test-key.txt", exchange -> {
+            exchange.getResponseHeaders().set("Content-Length", "42");
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            createBucket("test-bucket");
+            OriginConfig config = new OriginConfig(
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+            );
+            originProxyService.saveOriginConfig("test-bucket", config);
+
+            // When
+            OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                    "test-bucket", "test-key.txt", "HEAD", null
+            );
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getStatusCode()).isEqualTo(200);
+            assertThat(result.getBody()).isNull();
+            assertThat(result.getHeaders()).containsEntry("content-length", "42");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void proxyRequest_shouldForwardQueryString() throws Exception {
+        // Given - mock upstream echoes the query string back in the response body
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/origin-bucket/test-key.txt", exchange -> {
+            String query = exchange.getRequestURI().getQuery();
+            byte[] body = (query != null ? query : "").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            createBucket("test-bucket");
+            OriginConfig config = new OriginConfig(
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+            );
+            originProxyService.saveOriginConfig("test-bucket", config);
+
+            // When
+            OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                    "test-bucket", "test-key.txt", "GET", "prefix=folder/&max-keys=10"
+            );
+
+            // Then
+            assertThat(result).isNotNull();
+            assertThat(result.getStatusCode()).isEqualTo(200);
+            assertThat(new String(result.getBody(), StandardCharsets.UTF_8))
+                    .isEqualTo("prefix=folder/&max-keys=10");
+        } finally {
+            server.stop(0);
+        }
     }
 }
