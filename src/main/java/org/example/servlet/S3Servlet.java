@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.example.service.OriginProxyService;
+import org.example.service.OriginProxyService.ProxyResult;
 import org.example.service.StorageService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +27,7 @@ public class S3Servlet extends HttpServlet {
 
     private StorageService storageService;
     private long maxFileSize;
+    private OriginProxyService originProxyService;
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -39,6 +42,11 @@ public class S3Servlet extends HttpServlet {
     @Override
     protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         handleDeleteRequest(req, resp);
+    }
+
+    @Override
+    protected void doHead(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        handleHeadRequest(req, resp);
     }
 
     @Override
@@ -62,6 +70,7 @@ public class S3Servlet extends HttpServlet {
         this.maxFileSize = maxSizeParam != null ? Long.parseLong(maxSizeParam) : 100 * 1024 * 1024; // 100MB default
 
         this.storageService = new StorageService(storageRootDir, maxFileSize);
+        this.originProxyService = new OriginProxyService(storageRootDir);
 
         logger.info("S3Servlet initialized with storage directory: {}", storageRootDir);
     }
@@ -246,6 +255,61 @@ public class S3Servlet extends HttpServlet {
     }
 
     /**
+     * Handle HEAD requests - Check object existence and metadata
+     */
+    private void handleHeadRequest(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        String pathInfo = req.getPathInfo();
+        logger.info("HEAD request: path={}", pathInfo);
+
+        if (pathInfo == null || pathInfo.equals("/")) {
+            resp.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
+
+        String[] pathParts = pathInfo.substring(1).split("/", 2);
+        String bucketName = pathParts[0];
+        String objectKey = pathParts.length > 1 ? pathParts[1] : null;
+
+        if (objectKey != null && !objectKey.isEmpty()) {
+            handleHeadObject(req, resp, bucketName, objectKey);
+        } else {
+            resp.setStatus(HttpServletResponse.SC_OK);
+        }
+    }
+
+    /**
+     * Handle HEAD for a specific object - return metadata without body
+     */
+    private void handleHeadObject(HttpServletRequest req, HttpServletResponse resp, String bucketName, String objectKey) throws IOException {
+        if (!storageService.bucketExists(bucketName)) {
+            sendError(resp, "NoSuchBucket", "The specified bucket does not exist");
+            return;
+        }
+
+        File file = storageService.getObject(bucketName, objectKey);
+        if (file != null) {
+            var metadata = storageService.getObjectMetadata(bucketName, objectKey);
+            String contentType = metadata != null ? metadata.getContentType() : "application/octet-stream";
+            resp.setContentType(contentType);
+            resp.setContentLengthLong(file.length());
+            resp.setHeader("Last-Modified", formatRfc1123Date(file.lastModified()));
+            String etag = storageService.getObjectEtag(bucketName, objectKey);
+            if (etag != null) {
+                resp.setHeader("ETag", "\"" + etag + "\"");
+            }
+            resp.setStatus(HttpServletResponse.SC_OK);
+            return;
+        }
+
+        // Local object not found - try origin proxy
+        if (tryOriginProxy(resp, bucketName, objectKey, "HEAD", req.getQueryString())) {
+            return;
+        }
+
+        sendError(resp, "NoSuchKey", "The specified key does not exist");
+    }
+
+    /**
      * Get/Download an object
      */
     private void handleGetObject(HttpServletRequest req, HttpServletResponse resp, String bucketName, String objectKey) throws IOException {
@@ -255,26 +319,32 @@ public class S3Servlet extends HttpServlet {
         }
 
         File file = storageService.getObject(bucketName, objectKey);
-        if (file == null) {
-            sendError(resp, "NoSuchKey", "The specified key does not exist");
+        if (file != null) {
+            serveLocalObject(resp, bucketName, objectKey, file);
             return;
         }
 
+        // Local object not found - try origin proxy
+        if (tryOriginProxy(resp, bucketName, objectKey, "GET", req.getQueryString())) {
+            return;
+        }
+
+        sendError(resp, "NoSuchKey", "The specified key does not exist");
+    }
+
+    /**
+     * Serve a local object file with appropriate headers
+     */
+    private void serveLocalObject(HttpServletResponse resp, String bucketName, String objectKey, File file) throws IOException {
         var metadata = storageService.getObjectMetadata(bucketName, objectKey);
         String contentType = metadata != null ? metadata.getContentType() : "application/octet-stream";
-
         resp.setContentType(contentType);
         resp.setContentLengthLong(file.length());
-
-        // Add Last-Modified header (RFC 1123 format)
         resp.setHeader("Last-Modified", formatRfc1123Date(file.lastModified()));
-
-        // Add ETag header
         String etag = storageService.getObjectEtag(bucketName, objectKey);
         if (etag != null) {
             resp.setHeader("ETag", "\"" + etag + "\"");
         }
-
         try (InputStream in = new FileInputStream(file);
              OutputStream out = resp.getOutputStream()) {
             byte[] buffer = new byte[8192];
@@ -283,8 +353,40 @@ public class S3Servlet extends HttpServlet {
                 out.write(buffer, 0, bytesRead);
             }
         }
-
         logger.info("Downloaded object: {}/{} (size: {} bytes)", bucketName, objectKey, file.length());
+    }
+
+    /**
+     * Try to proxy a request to the configured origin server.
+     * @return true if proxy was attempted (regardless of result), false if no origin configured
+     */
+    private boolean tryOriginProxy(HttpServletResponse resp, String bucketName, String objectKey, String method, String queryString) throws IOException {
+        ProxyResult result = originProxyService.proxyRequest(bucketName, objectKey, method, queryString);
+        if (result == null) {
+            return false;
+        }
+        resp.setStatus(result.getStatusCode());
+        if (result.getErrorCode() != null && result.getStatusCode() >= 400) {
+            if ("NoSuchKey".equals(result.getErrorCode())) {
+                sendError(resp, "NoSuchKey", "The specified key does not exist");
+            } else {
+                sendError(resp, result.getErrorCode(), "Origin request failed");
+            }
+            return true;
+        }
+        if (result.getHeaders() != null) {
+            for (var entry : result.getHeaders().entrySet()) {
+                String key = entry.getKey();
+                if (key.equalsIgnoreCase("transfer-encoding") || key.equalsIgnoreCase("connection")) continue;
+                resp.setHeader(key, entry.getValue());
+            }
+        }
+        if (result.getBody() != null) {
+            resp.setContentLengthLong(result.getBody().length);
+            resp.getOutputStream().write(result.getBody());
+        }
+        logger.info("Proxied {} {}/{} from origin (status: {})", method, bucketName, objectKey, result.getStatusCode());
+        return true;
     }
 
     /**
