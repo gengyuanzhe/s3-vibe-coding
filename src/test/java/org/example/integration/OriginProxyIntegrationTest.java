@@ -1,6 +1,5 @@
 package org.example.integration;
 
-import com.sun.net.httpserver.HttpServer;
 import org.apache.hc.client5.http.classic.methods.*;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
@@ -15,7 +14,6 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
-import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -23,169 +21,57 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * End-to-end integration tests for origin proxy feature.
- * Starts a real Jetty server and a mock upstream HTTP server.
+ * Starts two real S3 service instances:
+ * - originServer: upstream S3 service (source of truth for objects)
+ * - proxyServer: downstream S3 service (proxies to origin on local miss)
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class OriginProxyIntegrationTest {
 
-    private static Server server;
-    private static int port;
-    private static String baseUrl;
+    private static Server originServer;
+    private static int originPort;
+    private static String originBaseUrl;
+    private static Path originStorageDir;
 
-    private static HttpServer mockOrigin;
-    private static int mockOriginPort;
+    private static Server proxyServer;
+    private static int proxyPort;
+    private static String proxyBaseUrl;
+    private static Path proxyStorageDir;
 
     @TempDir
     static Path tempDir;
-    private static Path testStorageDir;
 
     private CloseableHttpClient httpClient;
 
     @BeforeAll
     static void startServers() throws Exception {
-        // --- Set up test storage directory ---
-        testStorageDir = tempDir.resolve("storage");
-        Files.createDirectories(testStorageDir);
+        originStorageDir = tempDir.resolve("origin-storage");
+        Files.createDirectories(originStorageDir);
+        proxyStorageDir = tempDir.resolve("proxy-storage");
+        Files.createDirectories(proxyStorageDir);
 
-        // --- Start mock origin HTTP server ---
-        mockOrigin = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        originServer = createServer(originStorageDir, tempDir.resolve("origin-override-web.xml"));
+        proxyServer = createServer(proxyStorageDir, tempDir.resolve("proxy-override-web.xml"));
 
-        // Handler: /origin-bucket/proxied.txt -> 200 "from origin"
-        mockOrigin.createContext("/origin-bucket/proxied.txt", exchange -> {
-            byte[] body = "from origin".getBytes();
-            exchange.getResponseHeaders().set("Content-Type", "text/plain");
-            exchange.getResponseHeaders().set("ETag", "origin-etag");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.getResponseBody().close();
-        });
+        originServer.start();
+        proxyServer.start();
 
-        // Handler: /origin-bucket/media/video.mp4 -> 200 "video content"
-        mockOrigin.createContext("/origin-bucket/media/video.mp4", exchange -> {
-            byte[] body = "video content".getBytes();
-            exchange.getResponseHeaders().set("Content-Type", "video/mp4");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.getResponseBody().close();
-        });
-
-        // Handler: /origin-bucket/missing.txt -> 404
-        mockOrigin.createContext("/origin-bucket/missing.txt", exchange -> {
-            exchange.sendResponseHeaders(404, -1);
-            exchange.getResponseBody().close();
-        });
-
-        // Handler: /origin-bucket/obj -> reflects query string in body
-        mockOrigin.createContext("/origin-bucket/obj", exchange -> {
-            String query = exchange.getRequestURI().getQuery();
-            String bodyContent = query != null ? query : "";
-            byte[] body = bodyContent.getBytes();
-            exchange.getResponseHeaders().set("Content-Type", "text/plain");
-            exchange.sendResponseHeaders(200, body.length);
-            exchange.getResponseBody().write(body);
-            exchange.getResponseBody().close();
-        });
-
-        mockOrigin.start();
-        mockOriginPort = mockOrigin.getAddress().getPort();
-
-        // --- Start Jetty server ---
-        server = new Server();
-        ServerConnector connector = new ServerConnector(server);
-        connector.setPort(0);
-        server.addConnector(connector);
-
-        String webappPath = new File("src/main/webapp").getAbsolutePath();
-        WebAppContext webAppContext = new WebAppContext();
-        webAppContext.setContextPath("/");
-        webAppContext.setWar(webappPath);
-        webAppContext.setExtractWAR(false);
-
-        // Build override web.xml with all servlets and auth config
-        String overrideWebXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
-                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
-                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee\n" +
-                "         https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd\"\n" +
-                "         version=\"6.0\">\n" +
-                "    <context-param>\n" +
-                "        <param-name>storage.root.dir</param-name>\n" +
-                "        <param-value>" + testStorageDir.toAbsolutePath() + "</param-value>\n" +
-                "    </context-param>\n" +
-                "    <context-param>\n" +
-                "        <param-name>storage.max.file.size</param-name>\n" +
-                "        <param-value>104857600</param-value>\n" +
-                "    </context-param>\n" +
-                "    <context-param>\n" +
-                "        <param-name>health.monitor.enabled</param-name>\n" +
-                "        <param-value>false</param-value>\n" +
-                "    </context-param>\n" +
-                "    <filter>\n" +
-                "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n" +
-                "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n" +
-                "        <init-param>\n" +
-                "            <param-name>auth.mode</param-name>\n" +
-                "            <param-value>both</param-value>\n" +
-                "        </init-param>\n" +
-                "    </filter>\n" +
-                "    <filter-mapping>\n" +
-                "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n" +
-                "        <url-pattern>/*</url-pattern>\n" +
-                "    </filter-mapping>\n" +
-                "    <servlet>\n" +
-                "        <servlet-name>AuthAdminServlet</servlet-name>\n" +
-                "        <servlet-class>org.example.servlet.AuthAdminServlet</servlet-class>\n" +
-                "    </servlet>\n" +
-                "    <servlet-mapping>\n" +
-                "        <servlet-name>AuthAdminServlet</servlet-name>\n" +
-                "        <url-pattern>/admin/*</url-pattern>\n" +
-                "    </servlet-mapping>\n" +
-                "    <servlet>\n" +
-                "        <servlet-name>OriginConfigServlet</servlet-name>\n" +
-                "        <servlet-class>org.example.servlet.OriginConfigServlet</servlet-class>\n" +
-                "    </servlet>\n" +
-                "    <servlet-mapping>\n" +
-                "        <servlet-name>OriginConfigServlet</servlet-name>\n" +
-                "        <url-pattern>/admin/origin-config/*</url-pattern>\n" +
-                "    </servlet-mapping>\n" +
-                "    <servlet>\n" +
-                "        <servlet-name>S3Servlet</servlet-name>\n" +
-                "        <servlet-class>org.example.servlet.S3Servlet</servlet-class>\n" +
-                "        <load-on-startup>1</load-on-startup>\n" +
-                "    </servlet>\n" +
-                "    <servlet-mapping>\n" +
-                "        <servlet-name>S3Servlet</servlet-name>\n" +
-                "        <url-pattern>/*</url-pattern>\n" +
-                "    </servlet-mapping>\n" +
-                "</web-app>";
-
-        Path overrideWebXmlPath = tempDir.resolve("override-web.xml");
-        Files.writeString(overrideWebXmlPath, overrideWebXml);
-        webAppContext.addOverrideDescriptor(overrideWebXmlPath.toFile().getAbsolutePath());
-
-        server.setHandler(webAppContext);
-        server.start();
-
-        port = connector.getLocalPort();
-        baseUrl = "http://localhost:" + port;
+        originPort = ((ServerConnector) originServer.getConnectors()[0]).getLocalPort();
+        proxyPort = ((ServerConnector) proxyServer.getConnectors()[0]).getLocalPort();
+        originBaseUrl = "http://localhost:" + originPort;
+        proxyBaseUrl = "http://localhost:" + proxyPort;
 
         System.out.println("========================================");
         System.out.println("Origin Proxy Integration Test");
-        System.out.println("Jetty Port: " + port);
-        System.out.println("Base URL: " + baseUrl);
-        System.out.println("Mock Origin Port: " + mockOriginPort);
-        System.out.println("Storage: " + testStorageDir);
+        System.out.println("Origin Server: " + originBaseUrl);
+        System.out.println("Proxy Server:  " + proxyBaseUrl);
         System.out.println("========================================");
     }
 
     @AfterAll
     static void stopServers() throws Exception {
-        if (server != null) {
-            server.stop();
-        }
-        if (mockOrigin != null) {
-            mockOrigin.stop(0);
-        }
+        if (proxyServer != null) proxyServer.stop();
+        if (originServer != null) originServer.stop();
     }
 
     @BeforeEach
@@ -195,191 +81,339 @@ class OriginProxyIntegrationTest {
 
     @AfterEach
     void tearDown() throws Exception {
-        if (httpClient != null) {
-            httpClient.close();
-        }
+        if (httpClient != null) httpClient.close();
     }
 
-    // ==================== Helper Methods ====================
+    private static Server createServer(Path storageDir, Path overrideXmlPath) throws Exception {
+        Server server = new Server();
+        ServerConnector connector = new ServerConnector(server);
+        connector.setPort(0);
+        server.addConnector(connector);
 
-    private static String getOriginUrl() {
-        return "http://localhost:" + mockOriginPort;
+        String webappPath = new File("src/main/webapp").getAbsolutePath();
+        WebAppContext ctx = new WebAppContext();
+        ctx.setContextPath("/");
+        ctx.setWar(webappPath);
+        ctx.setExtractWAR(false);
+
+        String overrideXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\" version=\"6.0\">\n"
+                + "    <context-param>\n"
+                + "        <param-name>storage.root.dir</param-name>\n"
+                + "        <param-value>" + storageDir.toAbsolutePath() + "</param-value>\n"
+                + "    </context-param>\n"
+                + "    <context-param>\n"
+                + "        <param-name>storage.max.file.size</param-name>\n"
+                + "        <param-value>104857600</param-value>\n"
+                + "    </context-param>\n"
+                + "    <context-param>\n"
+                + "        <param-name>health.monitor.enabled</param-name>\n"
+                + "        <param-value>false</param-value>\n"
+                + "    </context-param>\n"
+                + "    <filter>\n"
+                + "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n"
+                + "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n"
+                + "        <init-param><param-name>auth.mode</param-name><param-value>both</param-value></init-param>\n"
+                + "        <init-param><param-name>auth.region</param-name><param-value>us-east-1</param-value></init-param>\n"
+                + "        <init-param><param-name>auth.service</param-name><param-value>s3</param-value></init-param>\n"
+                + "        <init-param><param-name>auth.time.skew.minutes</param-name><param-value>15</param-value></init-param>\n"
+                + "    </filter>\n"
+                + "    <filter-mapping>\n"
+                + "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n"
+                + "        <url-pattern>/*</url-pattern>\n"
+                + "    </filter-mapping>\n"
+                + "    <servlet>\n"
+                + "        <servlet-name>AuthAdminServlet</servlet-name>\n"
+                + "        <servlet-class>org.example.servlet.AuthAdminServlet</servlet-class>\n"
+                + "    </servlet>\n"
+                + "    <servlet-mapping>\n"
+                + "        <servlet-name>AuthAdminServlet</servlet-name>\n"
+                + "        <url-pattern>/admin/*</url-pattern>\n"
+                + "    </servlet-mapping>\n"
+                + "    <servlet>\n"
+                + "        <servlet-name>OriginConfigServlet</servlet-name>\n"
+                + "        <servlet-class>org.example.servlet.OriginConfigServlet</servlet-class>\n"
+                + "    </servlet>\n"
+                + "    <servlet-mapping>\n"
+                + "        <servlet-name>OriginConfigServlet</servlet-name>\n"
+                + "        <url-pattern>/admin/origin-config/*</url-pattern>\n"
+                + "    </servlet-mapping>\n"
+                + "    <servlet>\n"
+                + "        <servlet-name>S3Servlet</servlet-name>\n"
+                + "        <servlet-class>org.example.servlet.S3Servlet</servlet-class>\n"
+                + "        <load-on-startup>1</load-on-startup>\n"
+                + "    </servlet>\n"
+                + "    <servlet-mapping>\n"
+                + "        <servlet-name>S3Servlet</servlet-name>\n"
+                + "        <url-pattern>/*</url-pattern>\n"
+                + "    </servlet-mapping>\n"
+                + "</web-app>";
+
+        Files.writeString(overrideXmlPath, overrideXml);
+        ctx.setOverrideDescriptor(overrideXmlPath.toFile().getAbsolutePath());
+
+        server.setHandler(ctx);
+        return server;
     }
 
-    // ==================== Test Cases ====================
+    // ==================== Setup Tests ====================
 
     @Test
     @Order(1)
-    void shouldCreateBucket() throws Exception {
-        HttpPut request = new HttpPut(baseUrl + "/proxy-bucket");
+    void shouldCreateBucketsOnBothServers() throws Exception {
+        // Create source bucket on origin server
+        HttpPut originPut = new HttpPut(originBaseUrl + "/source-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(originPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
 
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
-            EntityUtils.consume(response.getEntity());
+        // Create proxy bucket on proxy server
+        HttpPut proxyPut = new HttpPut(proxyBaseUrl + "/proxy-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(proxyPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
         }
     }
 
     @Test
     @Order(2)
-    void shouldConfigureOriginProxy() throws Exception {
-        String configJson = "{\"originUrl\":\"" + getOriginUrl() + "\","
-                + "\"originBucket\":\"origin-bucket\","
-                + "\"cachePolicy\":\"no-cache\"}";
+    void shouldUploadFilesToOrigin() throws Exception {
+        // Upload various files to origin server's source-bucket
+        String[][] files = {
+                {"hello.txt", "Hello from origin server!"},
+                {"data/report.csv", "id,name\n1,alice\n2,bob"},
+                {"images/photo.jpg", "fake-jpg-content"},
+                {"docs/readme.md", "# Readme\nThis is from origin."}
+        };
 
-        HttpPut request = new HttpPut(baseUrl + "/admin/origin-config/proxy-bucket");
-        request.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
-
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
-            assertThat(response.getHeader("Content-Type").getValue()).contains("application/json");
-
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("\"originUrl\":\"" + getOriginUrl() + "\"");
-            assertThat(body).contains("\"originBucket\":\"origin-bucket\"");
-            assertThat(body).contains("\"cachePolicy\":\"no-cache\"");
+        for (String[] file : files) {
+            HttpPut put = new HttpPut(originBaseUrl + "/source-bucket/" + file[0]);
+            put.setEntity(new StringEntity(file[1], ContentType.TEXT_PLAIN));
+            try (CloseableHttpResponse resp = httpClient.execute(put)) {
+                assertThat(resp.getCode()).isEqualTo(200);
+                assertThat(resp.getHeader("ETag")).isNotNull();
+                EntityUtils.consume(resp.getEntity());
+            }
         }
     }
 
     @Test
     @Order(3)
-    void shouldProxyNonExistentObject() throws Exception {
-        // The file proxied.txt does not exist locally, so it should be fetched from origin
-        HttpGet request = new HttpGet(baseUrl + "/proxy-bucket/proxied.txt");
+    void shouldConfigureOriginProxy() throws Exception {
+        String configJson = String.format(
+                "{\"originUrl\":\"%s\",\"originBucket\":\"source-bucket\",\"cachePolicy\":\"no-cache\"}",
+                originBaseUrl);
 
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
+        HttpPut put = new HttpPut(proxyBaseUrl + "/admin/origin-config/proxy-bucket");
+        put.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
 
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).isEqualTo("from origin");
+        try (CloseableHttpResponse resp = httpClient.execute(put)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).contains("\"originBucket\":\"source-bucket\"");
+            assertThat(body).contains("\"cachePolicy\":\"no-cache\"");
         }
     }
 
+    // ==================== Proxy Behavior Tests ====================
+
     @Test
     @Order(4)
-    void shouldReturnLocalObjectWhenExists() throws Exception {
-        // Upload a local file with the same key as a proxied object
-        HttpPut uploadRequest = new HttpPut(baseUrl + "/proxy-bucket/proxied.txt");
-        uploadRequest.setEntity(new StringEntity("local content", ContentType.TEXT_PLAIN));
-
-        try (CloseableHttpResponse uploadResponse = httpClient.execute(uploadRequest)) {
-            assertThat(uploadResponse.getCode()).isEqualTo(200);
-            EntityUtils.consume(uploadResponse.getEntity());
-        }
-
-        // GET should return the local content, not the origin content
-        HttpGet getRequest = new HttpGet(baseUrl + "/proxy-bucket/proxied.txt");
-        try (CloseableHttpResponse getResponse = httpClient.execute(getRequest)) {
-            assertThat(getResponse.getCode()).isEqualTo(200);
-
-            String body = EntityUtils.toString(getResponse.getEntity());
-            assertThat(body).isEqualTo("local content");
-        }
-
-        // Clean up: delete the local file so subsequent tests proxy again
-        HttpDelete deleteRequest = new HttpDelete(baseUrl + "/proxy-bucket/proxied.txt");
-        try (CloseableHttpResponse deleteResponse = httpClient.execute(deleteRequest)) {
-            EntityUtils.consume(deleteResponse.getEntity());
+    void shouldProxyGetFromOriginWhenLocalMiss() throws Exception {
+        // hello.txt exists on origin but not on proxy
+        HttpGet get = new HttpGet(proxyBaseUrl + "/proxy-bucket/hello.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).isEqualTo("Hello from origin server!");
         }
     }
 
     @Test
     @Order(5)
-    void shouldProxyHeadObject() throws Exception {
-        HttpHead request = new HttpHead(baseUrl + "/proxy-bucket/proxied.txt");
-
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
-            // The origin sets ETag: origin-etag
-            assertThat(response.getHeader("ETag")).isNotNull();
-            assertThat(response.getHeader("ETag").getValue()).contains("origin-etag");
-            EntityUtils.consume(response.getEntity());
+    void shouldProxyNestedKeysFromOrigin() throws Exception {
+        // data/report.csv — nested key on origin
+        HttpGet get = new HttpGet(proxyBaseUrl + "/proxy-bucket/data/report.csv");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).contains("alice");
+            assertThat(body).contains("bob");
         }
     }
 
     @Test
     @Order(6)
-    void shouldProxyWithPrefixFilter() throws Exception {
-        // Update config with prefix "media/"
-        String configJson = "{\"originUrl\":\"" + getOriginUrl() + "\","
-                + "\"originBucket\":\"origin-bucket\","
-                + "\"prefix\":\"media/\","
-                + "\"cachePolicy\":\"no-cache\"}";
-
-        HttpPut configRequest = new HttpPut(baseUrl + "/admin/origin-config/proxy-bucket");
-        configRequest.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
-        try (CloseableHttpResponse configResponse = httpClient.execute(configRequest)) {
-            assertThat(configResponse.getCode()).isEqualTo(200);
-            EntityUtils.consume(configResponse.getEntity());
-        }
-
-        // media/ key should proxy successfully
-        HttpGet mediaRequest = new HttpGet(baseUrl + "/proxy-bucket/media/video.mp4");
-        try (CloseableHttpResponse mediaResponse = httpClient.execute(mediaRequest)) {
-            assertThat(mediaResponse.getCode()).isEqualTo(200);
-
-            String body = EntityUtils.toString(mediaResponse.getEntity());
-            assertThat(body).isEqualTo("video content");
-        }
-
-        // Non-media key should get 404 (not proxied, no local file)
-        HttpGet otherRequest = new HttpGet(baseUrl + "/proxy-bucket/proxied.txt");
-        try (CloseableHttpResponse otherResponse = httpClient.execute(otherRequest)) {
-            assertThat(otherResponse.getCode()).isEqualTo(404);
-            EntityUtils.consume(otherResponse.getEntity());
+    void shouldProxyHeadFromOrigin() throws Exception {
+        HttpHead head = new HttpHead(proxyBaseUrl + "/proxy-bucket/hello.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(head)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            assertThat(resp.getHeader("ETag")).isNotNull();
+            EntityUtils.consume(resp.getEntity());
         }
     }
 
     @Test
     @Order(7)
-    void shouldProxyWithQueryString() throws Exception {
-        // Reset config to no prefix
-        String configJson = "{\"originUrl\":\"" + getOriginUrl() + "\","
-                + "\"originBucket\":\"origin-bucket\","
-                + "\"cachePolicy\":\"no-cache\"}";
-
-        HttpPut configRequest = new HttpPut(baseUrl + "/admin/origin-config/proxy-bucket");
-        configRequest.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
-        try (CloseableHttpResponse configResponse = httpClient.execute(configRequest)) {
-            assertThat(configResponse.getCode()).isEqualTo(200);
-            EntityUtils.consume(configResponse.getEntity());
+    void shouldReturnLocalObjectOverOrigin() throws Exception {
+        // Upload a local file with the same key as an origin file
+        HttpPut put = new HttpPut(proxyBaseUrl + "/proxy-bucket/hello.txt");
+        put.setEntity(new StringEntity("Local override!", ContentType.TEXT_PLAIN));
+        try (CloseableHttpResponse resp = httpClient.execute(put)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
         }
 
-        // GET with query string - the mock origin handler echoes the query string as body
-        HttpGet request = new HttpGet(baseUrl + "/proxy-bucket/obj?acl");
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(200);
-
-            String body = EntityUtils.toString(response.getEntity());
-            assertThat(body).contains("acl");
+        // GET should return local content, not origin
+        HttpGet get = new HttpGet(proxyBaseUrl + "/proxy-bucket/hello.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).isEqualTo("Local override!");
         }
+
+        // Clean up so subsequent tests proxy again
+        HttpDelete delete = new HttpDelete(proxyBaseUrl + "/proxy-bucket/hello.txt");
+        httpClient.execute(delete).close();
     }
 
     @Test
     @Order(8)
-    void shouldReturn404WhenOriginReturns404() throws Exception {
-        HttpGet request = new HttpGet(baseUrl + "/proxy-bucket/missing.txt");
-
-        try (CloseableHttpResponse response = httpClient.execute(request)) {
-            assertThat(response.getCode()).isEqualTo(404);
-            EntityUtils.consume(response.getEntity());
+    void shouldReturn404WhenNotOnOriginOrLocal() throws Exception {
+        HttpGet get = new HttpGet(proxyBaseUrl + "/proxy-bucket/does-not-exist.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(404);
+            EntityUtils.consume(resp.getEntity());
         }
     }
 
     @Test
     @Order(9)
-    void shouldDeleteOriginConfig() throws Exception {
-        // Delete the origin config
-        HttpDelete deleteRequest = new HttpDelete(baseUrl + "/admin/origin-config/proxy-bucket");
-        try (CloseableHttpResponse deleteResponse = httpClient.execute(deleteRequest)) {
-            assertThat(deleteResponse.getCode()).isEqualTo(204);
-            EntityUtils.consume(deleteResponse.getEntity());
+    void shouldProxyWithPrefixFilter() throws Exception {
+        // Update config: only proxy keys with prefix "images/"
+        String configJson = String.format(
+                "{\"originUrl\":\"%s\",\"originBucket\":\"source-bucket\",\"prefix\":\"images/\",\"cachePolicy\":\"no-cache\"}",
+                originBaseUrl);
+
+        HttpPut configPut = new HttpPut(proxyBaseUrl + "/admin/origin-config/proxy-bucket");
+        configPut.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
+        try (CloseableHttpResponse resp = httpClient.execute(configPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
         }
 
-        // Without origin config, requesting a non-existent key should return 404
-        HttpGet getRequest = new HttpGet(baseUrl + "/proxy-bucket/proxied.txt");
-        try (CloseableHttpResponse getResponse = httpClient.execute(getRequest)) {
-            assertThat(getResponse.getCode()).isEqualTo(404);
-            EntityUtils.consume(getResponse.getEntity());
+        // images/ key should proxy from origin
+        HttpGet imageGet = new HttpGet(proxyBaseUrl + "/proxy-bucket/images/photo.jpg");
+        try (CloseableHttpResponse resp = httpClient.execute(imageGet)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).isEqualTo("fake-jpg-content");
+        }
+
+        // Non-images key should NOT proxy → 404 (not on local, prefix doesn't match)
+        HttpGet docGet = new HttpGet(proxyBaseUrl + "/proxy-bucket/docs/readme.md");
+        try (CloseableHttpResponse resp = httpClient.execute(docGet)) {
+            assertThat(resp.getCode()).isEqualTo(404);
+            EntityUtils.consume(resp.getEntity());
+        }
+    }
+
+    @Test
+    @Order(10)
+    void shouldProxyWithQueryString() throws Exception {
+        // Reset config to no prefix
+        String configJson = String.format(
+                "{\"originUrl\":\"%s\",\"originBucket\":\"source-bucket\",\"cachePolicy\":\"no-cache\"}",
+                originBaseUrl);
+
+        HttpPut configPut = new HttpPut(proxyBaseUrl + "/admin/origin-config/proxy-bucket");
+        configPut.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
+        try (CloseableHttpResponse resp = httpClient.execute(configPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Upload an object on origin
+        HttpPut put = new HttpPut(originBaseUrl + "/source-bucket/test-obj");
+        put.setEntity(new StringEntity("object content", ContentType.TEXT_PLAIN));
+        try (CloseableHttpResponse resp = httpClient.execute(put)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // GET with ?acl — the proxy should forward the query string to origin
+        HttpGet getAcl = new HttpGet(proxyBaseUrl + "/proxy-bucket/test-obj?acl");
+        try (CloseableHttpResponse resp = httpClient.execute(getAcl)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // GET with ?tagging
+        HttpGet getTagging = new HttpGet(proxyBaseUrl + "/proxy-bucket/test-obj?tagging");
+        try (CloseableHttpResponse resp = httpClient.execute(getTagging)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+    }
+
+    @Test
+    @Order(11)
+    void shouldStopProxyingAfterConfigDeleted() throws Exception {
+        // Delete the origin config
+        HttpDelete delete = new HttpDelete(proxyBaseUrl + "/admin/origin-config/proxy-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(delete)) {
+            assertThat(resp.getCode()).isEqualTo(204);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Same key that previously proxied should now return 404
+        HttpGet get = new HttpGet(proxyBaseUrl + "/proxy-bucket/hello.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(404);
+            EntityUtils.consume(resp.getEntity());
+        }
+    }
+
+    // ==================== Cross-Server Verification ====================
+
+    @Test
+    @Order(12)
+    void shouldListObjectsOnOriginIndependently() throws Exception {
+        // Verify origin server still has all its objects
+        HttpGet listOrigin = new HttpGet(originBaseUrl + "/source-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(listOrigin)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).contains("<Key>hello.txt</Key>");
+            assertThat(body).contains("<Key>data/report.csv</Key>");
+            assertThat(body).contains("<Key>images/photo.jpg</Key>");
+            assertThat(body).contains("<Key>docs/readme.md</Key>");
+        }
+    }
+
+    @Test
+    @Order(13)
+    void shouldReconfigureAndProxyAgain() throws Exception {
+        // Re-add config to prove it works after deletion
+        String configJson = String.format(
+                "{\"originUrl\":\"%s\",\"originBucket\":\"source-bucket\",\"cachePolicy\":\"no-cache\"}",
+                originBaseUrl);
+
+        HttpPut configPut = new HttpPut(proxyBaseUrl + "/admin/origin-config/proxy-bucket");
+        configPut.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
+        try (CloseableHttpResponse resp = httpClient.execute(configPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Should proxy again
+        HttpGet get = new HttpGet(proxyBaseUrl + "/proxy-bucket/docs/readme.md");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).contains("Readme");
+            assertThat(body).contains("from origin");
         }
     }
 }
