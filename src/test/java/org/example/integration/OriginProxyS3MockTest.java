@@ -50,7 +50,7 @@ class OriginProxyS3MockTest {
     private static String s3MockEndpoint;
 
     private static Server proxyServer;
-    private static int proxyPort;
+    private static int proxyPort;`
     private static String proxyBaseUrl;
     private static Path proxyStorageDir;
 
