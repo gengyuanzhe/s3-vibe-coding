@@ -1,5 +1,6 @@
 package org.example.service;
 
+import org.example.auth.AwsV4OutboundSigner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -148,13 +149,24 @@ public class OriginProxyService {
         String url = buildUpstreamUrl(config, objectKey, queryString);
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .method(method, HttpRequest.BodyPublishers.noBody())
-                    .timeout(Duration.ofSeconds(30))
-                    .build();
+                    .timeout(Duration.ofSeconds(30));
 
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (config.hasCredentials()) {
+                Map<String, String> signingHeaders = AwsV4OutboundSigner.sign(
+                        method, URI.create(url), Map.of(), null,
+                        config.getCredentials().accessKey(),
+                        config.getCredentials().secretKey(),
+                        config.getRegion(), config.getService()
+                );
+                for (Map.Entry<String, String> entry : signingHeaders.entrySet()) {
+                    requestBuilder.header(entry.getKey(), entry.getValue());
+                }
+            }
+
+            HttpResponse<byte[]> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
 
             int status = response.statusCode();
 

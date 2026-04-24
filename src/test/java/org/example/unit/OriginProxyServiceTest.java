@@ -322,6 +322,82 @@ class OriginProxyServiceTest {
     }
 
     @Test
+    void proxyRequest_shouldSignRequestWhenCredentialsConfigured() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        final boolean[] receivedAuthHeader = {false};
+        server.createContext("/origin-bucket/secret-file.txt", exchange -> {
+            String auth = exchange.getRequestHeaders().getFirst("Authorization");
+            if (auth != null && auth.startsWith("AWS4-HMAC-SHA256")) {
+                receivedAuthHeader[0] = true;
+                byte[] body = "secret content".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "text/plain");
+                exchange.sendResponseHeaders(200, body.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(body);
+                }
+            } else {
+                exchange.sendResponseHeaders(403, -1);
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            createBucket("test-bucket");
+            OriginConfig config = new OriginConfig(
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "no-cache",
+                    new OriginConfig.Credentials("AKID", "SECRET"),
+                    "us-east-1", "s3"
+            );
+            originProxyService.saveOriginConfig("test-bucket", config);
+
+            OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                    "test-bucket", "secret-file.txt", "GET", null
+            );
+
+            assertThat(result).isNotNull();
+            assertThat(result.getStatusCode()).isEqualTo(200);
+            assertThat(result.getBody()).isEqualTo("secret content".getBytes(StandardCharsets.UTF_8));
+            assertThat(receivedAuthHeader[0]).isTrue();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void proxyRequest_shouldStillProxyWithoutSigningWhenNoCredentials() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/origin-bucket/public-file.txt", exchange -> {
+            byte[] body = "public content".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(body);
+            }
+        });
+        server.start();
+        try {
+            int port = server.getAddress().getPort();
+            createBucket("test-bucket");
+            OriginConfig config = new OriginConfig(
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "no-cache",
+                    null, null, null
+            );
+            originProxyService.saveOriginConfig("test-bucket", config);
+
+            OriginProxyService.ProxyResult result = originProxyService.proxyRequest(
+                    "test-bucket", "public-file.txt", "GET", null
+            );
+
+            assertThat(result).isNotNull();
+            assertThat(result.getStatusCode()).isEqualTo(200);
+            assertThat(result.getBody()).isEqualTo("public content".getBytes(StandardCharsets.UTF_8));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void proxyRequest_shouldForwardQueryString() throws Exception {
         // Given - mock upstream echoes the query string back in the response body
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
