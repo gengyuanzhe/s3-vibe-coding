@@ -38,6 +38,11 @@ class OriginProxyIntegrationTest {
     private static String proxyBaseUrl;
     private static Path proxyStorageDir;
 
+    private static Server strictOriginServer;
+    private static int strictOriginPort;
+    private static String strictOriginBaseUrl;
+    private static Path strictOriginStorageDir;
+
     @TempDir
     static Path tempDir;
 
@@ -51,25 +56,33 @@ class OriginProxyIntegrationTest {
         Files.createDirectories(proxyStorageDir);
 
         originServer = createServer(originStorageDir, tempDir.resolve("origin-override-web.xml"));
+        strictOriginStorageDir = tempDir.resolve("strict-origin-storage");
+        Files.createDirectories(strictOriginStorageDir);
+        strictOriginServer = createStrictServer(strictOriginStorageDir, tempDir.resolve("strict-origin-override-web.xml"));
         proxyServer = createServer(proxyStorageDir, tempDir.resolve("proxy-override-web.xml"));
 
         originServer.start();
+        strictOriginServer.start();
         proxyServer.start();
 
         originPort = ((ServerConnector) originServer.getConnectors()[0]).getLocalPort();
+        strictOriginPort = ((ServerConnector) strictOriginServer.getConnectors()[0]).getLocalPort();
         proxyPort = ((ServerConnector) proxyServer.getConnectors()[0]).getLocalPort();
         originBaseUrl = "http://localhost:" + originPort;
+        strictOriginBaseUrl = "http://localhost:" + strictOriginPort;
         proxyBaseUrl = "http://localhost:" + proxyPort;
 
         System.out.println("========================================");
         System.out.println("Origin Proxy Integration Test");
         System.out.println("Origin Server: " + originBaseUrl);
         System.out.println("Proxy Server:  " + proxyBaseUrl);
+        System.out.println("Strict Origin Server: " + strictOriginBaseUrl);
         System.out.println("========================================");
     }
 
     @AfterAll
     static void stopServers() throws Exception {
+        if (strictOriginServer != null) strictOriginServer.stop();
         if (proxyServer != null) proxyServer.stop();
         if (originServer != null) originServer.stop();
     }
@@ -114,6 +127,82 @@ class OriginProxyIntegrationTest {
                 + "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n"
                 + "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n"
                 + "        <init-param><param-name>auth.mode</param-name><param-value>both</param-value></init-param>\n"
+                + "        <init-param><param-name>auth.region</param-name><param-value>us-east-1</param-value></init-param>\n"
+                + "        <init-param><param-name>auth.service</param-name><param-value>s3</param-value></init-param>\n"
+                + "        <init-param><param-name>auth.time.skew.minutes</param-name><param-value>15</param-value></init-param>\n"
+                + "    </filter>\n"
+                + "    <filter-mapping>\n"
+                + "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n"
+                + "        <url-pattern>/*</url-pattern>\n"
+                + "    </filter-mapping>\n"
+                + "    <servlet>\n"
+                + "        <servlet-name>AuthAdminServlet</servlet-name>\n"
+                + "        <servlet-class>org.example.servlet.AuthAdminServlet</servlet-class>\n"
+                + "    </servlet>\n"
+                + "    <servlet-mapping>\n"
+                + "        <servlet-name>AuthAdminServlet</servlet-name>\n"
+                + "        <url-pattern>/admin/*</url-pattern>\n"
+                + "    </servlet-mapping>\n"
+                + "    <servlet>\n"
+                + "        <servlet-name>OriginConfigServlet</servlet-name>\n"
+                + "        <servlet-class>org.example.servlet.OriginConfigServlet</servlet-class>\n"
+                + "    </servlet>\n"
+                + "    <servlet-mapping>\n"
+                + "        <servlet-name>OriginConfigServlet</servlet-name>\n"
+                + "        <url-pattern>/admin/origin-config/*</url-pattern>\n"
+                + "    </servlet-mapping>\n"
+                + "    <servlet>\n"
+                + "        <servlet-name>S3Servlet</servlet-name>\n"
+                + "        <servlet-class>org.example.servlet.S3Servlet</servlet-class>\n"
+                + "        <load-on-startup>1</load-on-startup>\n"
+                + "    </servlet>\n"
+                + "    <servlet-mapping>\n"
+                + "        <servlet-name>S3Servlet</servlet-name>\n"
+                + "        <url-pattern>/*</url-pattern>\n"
+                + "    </servlet-mapping>\n"
+                + "</web-app>";
+
+        Files.writeString(overrideXmlPath, overrideXml);
+        ctx.setOverrideDescriptor(overrideXmlPath.toFile().getAbsolutePath());
+
+        server.setHandler(ctx);
+        return server;
+    }
+
+    private static Server createStrictServer(Path storageDir, Path overrideXmlPath) throws Exception {
+        Server server = new Server();
+        ServerConnector connector = new ServerConnector(server);
+        connector.setPort(0);
+        server.addConnector(connector);
+
+        String webappPath = new File("src/main/webapp").getAbsolutePath();
+        WebAppContext ctx = new WebAppContext();
+        ctx.setContextPath("/");
+        ctx.setWar(webappPath);
+        ctx.setExtractWAR(false);
+
+        String overrideXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\" version=\"6.0\">\n"
+                + "    <context-param>\n"
+                + "        <param-name>storage.root.dir</param-name>\n"
+                + "        <param-value>" + storageDir.toAbsolutePath() + "</param-value>\n"
+                + "    </context-param>\n"
+                + "    <context-param>\n"
+                + "        <param-name>storage.max.file.size</param-name>\n"
+                + "        <param-value>104857600</param-value>\n"
+                + "    </context-param>\n"
+                + "    <context-param>\n"
+                + "        <param-name>health.monitor.enabled</param-name>\n"
+                + "        <param-value>false</param-value>\n"
+                + "    </context-param>\n"
+                + "    <context-param>\n"
+                + "        <param-name>credentials.file.path</param-name>\n"
+                + "        <param-value>" + new File("src/main/resources/credentials.properties").getAbsolutePath() + "</param-value>\n"
+                + "    </context-param>\n"
+                + "    <filter>\n"
+                + "        <filter-name>AwsV4AuthenticationFilter</filter-name>\n"
+                + "        <filter-class>org.example.filter.AwsV4AuthenticationFilter</filter-class>\n"
+                + "        <init-param><param-name>auth.mode</param-name><param-value>aws-v4</param-value></init-param>\n"
                 + "        <init-param><param-name>auth.region</param-name><param-value>us-east-1</param-value></init-param>\n"
                 + "        <init-param><param-name>auth.service</param-name><param-value>s3</param-value></init-param>\n"
                 + "        <init-param><param-name>auth.time.skew.minutes</param-name><param-value>15</param-value></init-param>\n"
@@ -415,5 +504,59 @@ class OriginProxyIntegrationTest {
             assertThat(body).contains("Readme");
             assertThat(body).contains("from origin");
         }
+    }
+
+    // ==================== Signed Proxy Tests ====================
+
+    @Test
+    @Order(14)
+    void shouldProxyWithV4SigningToStrictAuthOrigin() throws Exception {
+        // Upload to strict origin using AWS SDK with V4 signing
+        software.amazon.awssdk.services.s3.S3Client strictS3Client = software.amazon.awssdk.services.s3.S3Client.builder()
+                .endpointOverride(java.net.URI.create(strictOriginBaseUrl))
+                .region(software.amazon.awssdk.regions.Region.US_EAST_1)
+                .credentialsProvider(software.amazon.awssdk.auth.credentials.StaticCredentialsProvider.create(
+                        software.amazon.awssdk.auth.credentials.AwsBasicCredentials.create(
+                                "AKIAIOSFODNN7EXAMPLE",
+                                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")))
+                .serviceConfiguration(software.amazon.awssdk.services.s3.S3Configuration.builder()
+                        .pathStyleAccessEnabled(true)
+                        .chunkedEncodingEnabled(false)
+                        .build())
+                .build();
+
+        strictS3Client.createBucket(software.amazon.awssdk.services.s3.model.CreateBucketRequest.builder()
+                .bucket("strict-bucket").build());
+        strictS3Client.putObject(software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
+                        .bucket("strict-bucket").key("signed-obj.txt").build(),
+                software.amazon.awssdk.core.sync.RequestBody.fromString("signed content"));
+
+        // Create proxy bucket and configure it to proxy to strict origin WITH credentials
+        HttpPut proxyBucketPut = new HttpPut(proxyBaseUrl + "/signed-proxy-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(proxyBucketPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        String configJson = String.format(
+                "{\"originUrl\":\"%s\",\"originBucket\":\"strict-bucket\",\"cachePolicy\":\"no-cache\",\"region\":\"us-east-1\",\"service\":\"s3\",\"credentials\":{\"accessKey\":\"AKIAIOSFODNN7EXAMPLE\",\"secretKey\":\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"}}",
+                strictOriginBaseUrl);
+
+        HttpPut configPut = new HttpPut(proxyBaseUrl + "/admin/origin-config/signed-proxy-bucket");
+        configPut.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
+        try (CloseableHttpResponse resp = httpClient.execute(configPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // GET through proxy should succeed (proxy signs the request to strict origin)
+        HttpGet get = new HttpGet(proxyBaseUrl + "/signed-proxy-bucket/signed-obj.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).isEqualTo("signed content");
+        }
+
+        strictS3Client.close();
     }
 }
