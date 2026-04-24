@@ -90,12 +90,11 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- AWS SDK for Java v2 - Integration Testing -->
+        <!-- AWS SDK for Java v2 - Origin Proxy V4 Signing + Integration Testing -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.29.45</version>
-            <scope>test</scope>
         </dependency>
 
         <!-- Adobe S3Mock for origin proxy testing -->
