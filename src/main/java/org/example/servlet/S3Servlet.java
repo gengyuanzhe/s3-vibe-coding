@@ -450,9 +450,15 @@ public class S3Servlet extends HttpServlet {
 
         if (storageService.deleteObject(bucketName, objectKey)) {
             resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
-        } else {
-            sendError(resp, "NoSuchKey", "The specified key does not exist");
+            return;
         }
+
+        // Local object not found - try origin proxy delete
+        if (tryOriginProxy(resp, bucketName, objectKey, "DELETE", req.getQueryString())) {
+            return;
+        }
+
+        sendError(resp, "NoSuchKey", "The specified key does not exist");
     }
 
     /**
