@@ -60,7 +60,8 @@ class OriginProxyServiceTest {
                 "origin-bucket",
                 "prefix/",
                 "cache",
-                creds
+                creds,
+                null, null
         );
 
         // When
@@ -87,14 +88,16 @@ class OriginProxyServiceTest {
                 "first-bucket",
                 null,
                 "no-cache",
-                null
+                null,
+                null, null
         );
         OriginConfig second = new OriginConfig(
                 "https://second.example.com",
                 "second-bucket",
                 "docs/",
                 "cache-ttl",
-                new OriginConfig.Credentials("newKey", "newSecret")
+                new OriginConfig.Credentials("newKey", "newSecret"),
+                null, null
         );
 
         // When
@@ -117,7 +120,7 @@ class OriginProxyServiceTest {
         // Given
         createBucket("test-bucket");
         OriginConfig config = new OriginConfig(
-                "https://origin.example.com", "origin-bucket", null, "cache", null
+                "https://origin.example.com", "origin-bucket", null, "cache", null, null, null
         );
         originProxyService.saveOriginConfig("test-bucket", config);
         assertThat(originProxyService.getOriginConfig("test-bucket")).isNotNull();
@@ -144,7 +147,7 @@ class OriginProxyServiceTest {
         createBucket("test-bucket");
         OriginConfig config = new OriginConfig(
                 "https://origin.example.com", "origin-bucket", "pfx/", "cache",
-                new OriginConfig.Credentials("ak", "sk")
+                new OriginConfig.Credentials("ak", "sk"), null, null
         );
 
         // When
@@ -180,7 +183,7 @@ class OriginProxyServiceTest {
             int port = server.getAddress().getPort();
             createBucket("test-bucket");
             OriginConfig config = new OriginConfig(
-                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null, null, null
             );
             originProxyService.saveOriginConfig("test-bucket", config);
 
@@ -219,7 +222,7 @@ class OriginProxyServiceTest {
         // Given
         createBucket("test-bucket");
         OriginConfig config = new OriginConfig(
-                "http://127.0.0.1:1", "origin-bucket", "media/", "cache", null
+                "http://127.0.0.1:1", "origin-bucket", "media/", "cache", null, null, null
         );
         originProxyService.saveOriginConfig("test-bucket", config);
 
@@ -237,7 +240,7 @@ class OriginProxyServiceTest {
         // Given - config points to localhost:1 where nothing is listening
         createBucket("test-bucket");
         OriginConfig config = new OriginConfig(
-                "http://127.0.0.1:1", "origin-bucket", null, "cache", null
+                "http://127.0.0.1:1", "origin-bucket", null, "cache", null, null, null
         );
         originProxyService.saveOriginConfig("test-bucket", config);
 
@@ -266,7 +269,7 @@ class OriginProxyServiceTest {
             int port = server.getAddress().getPort();
             createBucket("test-bucket");
             OriginConfig config = new OriginConfig(
-                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null, null, null
             );
             originProxyService.saveOriginConfig("test-bucket", config);
 
@@ -299,7 +302,7 @@ class OriginProxyServiceTest {
             int port = server.getAddress().getPort();
             createBucket("test-bucket");
             OriginConfig config = new OriginConfig(
-                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null, null, null
             );
             originProxyService.saveOriginConfig("test-bucket", config);
 
@@ -336,7 +339,7 @@ class OriginProxyServiceTest {
             int port = server.getAddress().getPort();
             createBucket("test-bucket");
             OriginConfig config = new OriginConfig(
-                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null
+                    "http://127.0.0.1:" + port, "origin-bucket", null, "cache", null, null, null
             );
             originProxyService.saveOriginConfig("test-bucket", config);
 

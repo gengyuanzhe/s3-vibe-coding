@@ -17,20 +17,27 @@ public class OriginConfig {
     private static final Pattern CREDENTIALS_BLOCK_PATTERN = Pattern.compile("\"credentials\"\\s*:\\s*\\{([^}]*)}");
     private static final Pattern ACCESS_KEY_PATTERN = Pattern.compile("\"accessKey\"\\s*:\\s*\"([^\"]+)\"");
     private static final Pattern SECRET_KEY_PATTERN = Pattern.compile("\"secretKey\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern REGION_PATTERN = Pattern.compile("\"region\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern SERVICE_PATTERN = Pattern.compile("\"service\"\\s*:\\s*\"([^\"]+)\"");
 
     private final String originUrl;
     private final String originBucket;
     private final String prefix;
     private final String cachePolicy;
     private final Credentials credentials;
+    private final String region;
+    private final String service;
 
     public OriginConfig(String originUrl, String originBucket, String prefix,
-                        String cachePolicy, Credentials credentials) {
+                        String cachePolicy, Credentials credentials,
+                        String region, String service) {
         this.originUrl = originUrl;
         this.originBucket = originBucket;
         this.prefix = prefix;
         this.cachePolicy = cachePolicy;
         this.credentials = credentials;
+        this.region = (region == null || region.isEmpty()) ? "us-east-1" : region;
+        this.service = (service == null || service.isEmpty()) ? "s3" : service;
     }
 
     public String getOriginUrl() {
@@ -51,6 +58,14 @@ public class OriginConfig {
 
     public Credentials getCredentials() {
         return credentials;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public String getService() {
+        return service;
     }
 
     public boolean matches(String objectKey) {
@@ -81,7 +96,9 @@ public class OriginConfig {
         if (prefix != null) {
             sb.append("\"prefix\":\"").append(escapeJson(prefix)).append("\",");
         }
-        sb.append("\"cachePolicy\":\"").append(escapeJson(cachePolicy)).append("\"");
+        sb.append("\"cachePolicy\":\"").append(escapeJson(cachePolicy)).append("\",");
+        sb.append("\"region\":\"").append(escapeJson(region)).append("\",");
+        sb.append("\"service\":\"").append(escapeJson(service)).append("\"");
         if (credentials != null) {
             sb.append(",\"credentials\":{\"accessKey\":\"").append(escapeJson(credentials.accessKey()))
               .append("\",\"secretKey\":\"").append(escapeJson(credentials.secretKey())).append("\"}");
@@ -97,6 +114,8 @@ public class OriginConfig {
         String originBucket = extract(json, ORIGIN_BUCKET_PATTERN);
         String prefix = extract(json, PREFIX_PATTERN);
         String cachePolicy = extract(json, CACHE_POLICY_PATTERN);
+        String region = extract(json, REGION_PATTERN);
+        String service = extract(json, SERVICE_PATTERN);
 
         Credentials credentials = null;
         Matcher credsMatcher = CREDENTIALS_BLOCK_PATTERN.matcher(json);
@@ -109,7 +128,7 @@ public class OriginConfig {
             }
         }
 
-        return new OriginConfig(originUrl, originBucket, prefix, cachePolicy, credentials);
+        return new OriginConfig(originUrl, originBucket, prefix, cachePolicy, credentials, region, service);
     }
 
     private static String extract(String input, Pattern pattern) {

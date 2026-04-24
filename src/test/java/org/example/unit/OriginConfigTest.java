@@ -11,7 +11,7 @@ class OriginConfigTest {
     void matches_returnsTrue_whenKeyStartsWithPrefix() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", "images/",
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.matches("images/photo.jpg")).isTrue();
         assertThat(config.matches("images/sub/dir/file.png")).isTrue();
@@ -21,7 +21,7 @@ class OriginConfigTest {
     void matches_returnsFalse_whenKeyDoesNotStartWithPrefix() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", "images/",
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.matches("documents/report.pdf")).isFalse();
         assertThat(config.matches("videos/clip.mp4")).isFalse();
@@ -31,7 +31,7 @@ class OriginConfigTest {
     void matches_returnsTrue_forAllKeys_whenPrefixIsNull() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", null,
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.matches("anything")).isTrue();
         assertThat(config.matches("deep/nested/key.txt")).isTrue();
@@ -41,7 +41,7 @@ class OriginConfigTest {
     void matches_returnsTrue_forAllKeys_whenPrefixIsEmpty() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", "",
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.matches("anything")).isTrue();
         assertThat(config.matches("deep/nested/key.txt")).isTrue();
@@ -51,7 +51,7 @@ class OriginConfigTest {
     void hasCredentials_returnsFalse_whenNull() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", null,
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.hasCredentials()).isFalse();
     }
@@ -61,7 +61,7 @@ class OriginConfigTest {
         OriginConfig.Credentials creds = new OriginConfig.Credentials("AKID", "SECRET");
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", null,
-                "no-cache", creds);
+                "no-cache", creds, null, null);
 
         assertThat(config.hasCredentials()).isTrue();
     }
@@ -71,7 +71,7 @@ class OriginConfigTest {
         OriginConfig.Credentials creds = new OriginConfig.Credentials("AKID", "SECRET");
         OriginConfig config = new OriginConfig(
                 "http://origin.example.com", "my-bucket", "prefix/",
-                "no-cache", creds);
+                "no-cache", creds, "eu-west-1", "s3");
 
         assertThat(config.getOriginUrl()).isEqualTo("http://origin.example.com");
         assertThat(config.getOriginBucket()).isEqualTo("my-bucket");
@@ -80,6 +80,8 @@ class OriginConfigTest {
         assertThat(config.getCredentials()).isEqualTo(creds);
         assertThat(config.getCredentials().accessKey()).isEqualTo("AKID");
         assertThat(config.getCredentials().secretKey()).isEqualTo("SECRET");
+        assertThat(config.getRegion()).isEqualTo("eu-west-1");
+        assertThat(config.getService()).isEqualTo("s3");
     }
 
     @Test
@@ -118,7 +120,7 @@ class OriginConfigTest {
         OriginConfig.Credentials creds = new OriginConfig.Credentials("AKID", "SECRET");
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src", "docs/",
-                "no-cache", creds);
+                "no-cache", creds, null, null);
 
         String json = config.toJson();
 
@@ -135,7 +137,7 @@ class OriginConfigTest {
     void toJson_omitsNullPrefixAndNullCredentials() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src", null,
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         String json = config.toJson();
 
@@ -150,7 +152,7 @@ class OriginConfigTest {
     void validate_rejectsMissingOriginUrl() {
         OriginConfig config = new OriginConfig(
                 "", "src-bucket", null,
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.validate()).isFalse();
     }
@@ -159,7 +161,7 @@ class OriginConfigTest {
     void validate_rejectsMissingOriginBucket() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "", null,
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.validate()).isFalse();
     }
@@ -168,7 +170,7 @@ class OriginConfigTest {
     void validate_rejectsInvalidCachePolicy() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", null,
-                "invalid-policy", null);
+                "invalid-policy", null, null, null);
 
         assertThat(config.validate()).isFalse();
     }
@@ -177,7 +179,7 @@ class OriginConfigTest {
     void validate_acceptsValidConfig() {
         OriginConfig config = new OriginConfig(
                 "http://localhost:9000", "src-bucket", null,
-                "no-cache", null);
+                "no-cache", null, null, null);
 
         assertThat(config.validate()).isTrue();
     }
@@ -185,14 +187,90 @@ class OriginConfigTest {
     @Test
     void validate_shouldRejectIncompleteCredentials() {
         var config = new OriginConfig("https://example.com", "src", null, "no-cache",
-                new OriginConfig.Credentials("AK", ""));
+                new OriginConfig.Credentials("AK", ""), null, null);
         assertThat(config.validate()).isFalse();
     }
 
     @Test
     void hasCredentials_shouldReturnFalseWhenAccessKeyEmpty() {
         var creds = new OriginConfig.Credentials("", "secret");
-        var config = new OriginConfig("https://example.com", "src", null, "no-cache", creds);
+        var config = new OriginConfig("https://example.com", "src", null, "no-cache", creds, null, null);
         assertThat(config.hasCredentials()).isFalse();
+    }
+
+    @Test
+    void getters_returnRegionAndService() {
+        OriginConfig config = new OriginConfig(
+                "http://localhost:9000", "src-bucket", null,
+                "no-cache", null, "eu-west-1", "custom-service");
+
+        assertThat(config.getRegion()).isEqualTo("eu-west-1");
+        assertThat(config.getService()).isEqualTo("custom-service");
+    }
+
+    @Test
+    void region_defaultsToUsEast1() {
+        OriginConfig config = new OriginConfig(
+                "http://localhost:9000", "src-bucket", null,
+                "no-cache", null, null, null);
+
+        assertThat(config.getRegion()).isEqualTo("us-east-1");
+        assertThat(config.getService()).isEqualTo("s3");
+    }
+
+    @Test
+    void region_defaultsToUsEast1_whenEmpty() {
+        OriginConfig config = new OriginConfig(
+                "http://localhost:9000", "src-bucket", null,
+                "no-cache", null, "", "");
+
+        assertThat(config.getRegion()).isEqualTo("us-east-1");
+        assertThat(config.getService()).isEqualTo("s3");
+    }
+
+    @Test
+    void toJson_includesRegionAndService() {
+        OriginConfig config = new OriginConfig(
+                "http://localhost:9000", "src", null,
+                "no-cache", null, "eu-west-1", "s3");
+
+        String json = config.toJson();
+
+        assertThat(json).contains("\"region\":\"eu-west-1\"");
+        assertThat(json).contains("\"service\":\"s3\"");
+    }
+
+    @Test
+    void toJson_includesDefaultRegionAndService() {
+        OriginConfig config = new OriginConfig(
+                "http://localhost:9000", "src", null,
+                "no-cache", null, null, null);
+
+        String json = config.toJson();
+
+        assertThat(json).contains("\"region\":\"us-east-1\"");
+        assertThat(json).contains("\"service\":\"s3\"");
+    }
+
+    @Test
+    void fromJson_parsesRegionAndService() {
+        String json = "{\"originUrl\":\"http://localhost:9000\",\"originBucket\":\"src\",\"cachePolicy\":\"no-cache\",\"region\":\"ap-southeast-1\",\"service\":\"s3\"}";
+
+        OriginConfig config = OriginConfig.fromJson(json);
+
+        assertThat(config).isNotNull();
+        assertThat(config.getRegion()).isEqualTo("ap-southeast-1");
+        assertThat(config.getService()).isEqualTo("s3");
+    }
+
+    @Test
+    void fromJson_defaultsRegionAndServiceWhenMissing() {
+        String json = "{\"originUrl\":\"http://localhost:9000\",\"originBucket\":\"src\",\"cachePolicy\":\"no-cache\"}";
+
+        OriginConfig config = OriginConfig.fromJson(json);
+
+        assertThat(config).isNotNull();
+        assertThat(config.getRegion()).isEqualTo("us-east-1");
+        assertThat(config.getService()).isEqualTo("s3");
     }
 }
