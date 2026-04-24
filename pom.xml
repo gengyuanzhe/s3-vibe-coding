@@ -97,6 +97,20 @@
             <version>2.29.45</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- Adobe S3Mock for origin proxy testing -->
+        <dependency>
+            <groupId>com.adobe.testing</groupId>
+            <artifactId>s3mock-junit5</artifactId>
+            <version>4.12.4</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>ch.qos.logback</groupId>
+                    <artifactId>logback-classic</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 
     <build>
