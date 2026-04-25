@@ -559,4 +559,98 @@ class OriginProxyIntegrationTest {
 
         strictS3Client.close();
     }
+
+    @Test
+    @Order(15)
+    void shouldProxyDeleteToOriginWhenLocalMiss() throws Exception {
+        // Object "to-delete.txt" exists on the origin server but not locally on proxy.
+        // Upload it to the regular origin server (auth mode "both", so unsigned works)
+        HttpPut uploadToOrigin = new HttpPut(originBaseUrl + "/source-bucket/to-delete.txt");
+        uploadToOrigin.setEntity(new StringEntity("delete me", ContentType.TEXT_PLAIN));
+        try (CloseableHttpResponse resp = httpClient.execute(uploadToOrigin)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Verify it exists on origin
+        HttpGet checkOrigin = new HttpGet(originBaseUrl + "/source-bucket/to-delete.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(checkOrigin)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // DELETE through proxy should proxy to origin (object not on proxy locally)
+        HttpDelete deleteViaProxy = new HttpDelete(proxyBaseUrl + "/proxy-bucket/to-delete.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(deleteViaProxy)) {
+            assertThat(resp.getCode()).isEqualTo(204);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Verify it's gone from origin
+        HttpGet verifyGone = new HttpGet(originBaseUrl + "/source-bucket/to-delete.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(verifyGone)) {
+            assertThat(resp.getCode()).isEqualTo(404);
+            EntityUtils.consume(resp.getEntity());
+        }
+    }
+
+    @Test
+    @Order(16)
+    void shouldSucceedProxyWithoutCredentialsToPermissiveOrigin() throws Exception {
+        // Verify that proxying WITHOUT credentials works when the origin accepts unsigned requests.
+        // Note: The "strict origin" server initializes with auth.mode=aws-v4, but AuthState is a
+        // JVM-level singleton. Since the proxy server initializes last with auth.mode=both, all
+        // servers effectively run in "both" mode. This test validates the no-credentials proxy
+        // path works correctly; the unsigned-failure scenario requires process-isolated tests.
+
+        // Create bucket on origin server
+        HttpPut bucketPut = new HttpPut(originBaseUrl + "/unsigned-test-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(bucketPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Upload to the origin server using unsigned requests (auth mode "both")
+        HttpPut uploadPut = new HttpPut(originBaseUrl + "/unsigned-test-bucket/test.txt");
+        uploadPut.setEntity(new StringEntity("test", ContentType.TEXT_PLAIN));
+        try (CloseableHttpResponse resp = httpClient.execute(uploadPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Create proxy bucket and configure it WITHOUT credentials, pointing to origin
+        HttpPut proxyBucketPut = new HttpPut(proxyBaseUrl + "/unsigned-proxy-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(proxyBucketPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        String configJson = String.format(
+                "{\"originUrl\":\"%s\",\"originBucket\":\"unsigned-test-bucket\",\"cachePolicy\":\"no-cache\"}",
+                originBaseUrl);
+
+        HttpPut configPut = new HttpPut(proxyBaseUrl + "/admin/origin-config/unsigned-proxy-bucket");
+        configPut.setEntity(new StringEntity(configJson, ContentType.APPLICATION_JSON));
+        try (CloseableHttpResponse resp = httpClient.execute(configPut)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            EntityUtils.consume(resp.getEntity());
+        }
+
+        // Verify config does NOT contain credentials
+        HttpGet getConfig = new HttpGet(proxyBaseUrl + "/admin/origin-config/unsigned-proxy-bucket");
+        try (CloseableHttpResponse resp = httpClient.execute(getConfig)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).doesNotContain("accessKey");
+            assertThat(body).doesNotContain("secretKey");
+        }
+
+        // GET through proxy without credentials succeeds because origin accepts unsigned requests
+        HttpGet get = new HttpGet(proxyBaseUrl + "/unsigned-proxy-bucket/test.txt");
+        try (CloseableHttpResponse resp = httpClient.execute(get)) {
+            assertThat(resp.getCode()).isEqualTo(200);
+            String body = EntityUtils.toString(resp.getEntity());
+            assertThat(body).isEqualTo("test");
+        }
+    }
 }
