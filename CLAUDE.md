@@ -44,7 +44,11 @@ s3-vibe-coding/
 │       │   └── AwsV4SignerTest.java
 │       └── integration/                           # 集成测试
 │           ├── S3StorageIntegrationTest.java       # HTTP Client 集成测试
-│           └── AwsSdkIntegrationTest.java          # AWS SDK v2 集成测试
+│           ├── AwsSdkIntegrationTest.java          # AWS SDK v2 集成测试
+│           ├── OriginProxyIntegrationTest.java     # 同 JVM 双服务器 Origin Proxy 测试
+│           ├── OriginProxyProcessIsolatedTest.java # 进程隔离 Origin Proxy 测试
+│           ├── OriginProxyS3MockTest.java          # Adobe S3Mock Origin Proxy 测试
+│           └── OriginProxyS3ProxyTest.java         # s3proxy Origin Proxy 兼容性测试
 └── storage/                                       # 文件存储根目录
 ```
 
@@ -414,6 +418,10 @@ secretKey.default=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 | AwsV4SignerTest | 单元测试 | V4 签名算法验证 |
 | S3StorageIntegrationTest | 集成测试 | Apache HttpClient 端到端测试 |
 | AwsSdkIntegrationTest | 集成测试 | AWS SDK v2 完整 CRUD 测试 |
+| OriginProxyIntegrationTest | 集成测试 | 同 JVM 双服务器 Origin Proxy（含 V4 签名代理） |
+| OriginProxyProcessIsolatedTest | 集成测试 | 进程隔离 Origin Proxy（独立 JVM） |
+| OriginProxyS3MockTest | 集成测试 | Adobe S3Mock 作为远端 Origin Proxy |
+| OriginProxyS3ProxyTest | 集成测试 | s3proxy 作为远端 Origin Proxy 兼容性验证 |
 
 ### 运行测试
 
@@ -428,6 +436,10 @@ mvn test
 - 通过 `override-web.xml` 覆盖配置（含 V4 认证配置）
 - `S3StorageIntegrationTest`: Apache HttpClient 5 发送 HTTP 请求
 - `AwsSdkIntegrationTest`: AWS SDK v2 `S3Client` 直接调用（`pathStyleAccessEnabled(true)`, `chunkedEncodingEnabled(false)`）
+- `OriginProxyIntegrationTest`: 同 JVM 启动两个 Jetty 服务器（origin + proxy），含 V4 签名代理、DELETE 代理、无签名代理等场景
+- `OriginProxyProcessIsolatedTest`: 通过 `ProcessBuilder` 启动独立 JVM 进程，验证进程级隔离
+- `OriginProxyS3MockTest`: 使用 Adobe S3Mock (`s3mock-junit5`) 作为远端 S3 服务器，AWS SDK 上传文件到 S3Mock，代理从 S3Mock 拉取
+- `OriginProxyS3ProxyTest`: 使用 s3proxy (`org.gaul:s3proxy`) + jclouds transient BlobStore（内存）作为远端，jclouds API 上传文件，验证第三方 S3 实现兼容性
 - 测试间有顺序依赖（`@Order` 注解）
 
 ### 测试依赖
@@ -470,6 +482,22 @@ mvn test
     <groupId>software.amazon.awssdk</groupId>
     <artifactId>s3</artifactId>
     <version>2.29.45</version>
+    <scope>test</scope>
+</dependency>
+
+<!-- Adobe S3Mock for origin proxy testing -->
+<dependency>
+    <groupId>com.adobe.testing</groupId>
+    <artifactId>s3mock-junit5</artifactId>
+    <version>4.12.4</version>
+    <scope>test</scope>
+</dependency>
+
+<!-- s3proxy for origin proxy compatibility testing -->
+<dependency>
+    <groupId>org.gaul</groupId>
+    <artifactId>s3proxy</artifactId>
+    <version>3.1.0</version>
     <scope>test</scope>
 </dependency>
 ```

@@ -110,6 +110,14 @@
                 </exclusion>
             </exclusions>
         </dependency>
+
+        <!-- s3proxy for origin proxy compatibility testing -->
+        <dependency>
+            <groupId>org.gaul</groupId>
+            <artifactId>s3proxy</artifactId>
+            <version>3.1.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
